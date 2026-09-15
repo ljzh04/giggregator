@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from .arbeitnow import ArbeitnowAdapter
 from .base import SourceAdapter, SourceMeta
+from .careerjet_ph import CareerjetPhAdapter
 from .jobicy import JobicyAdapter
+from .jooble_ph import JooblePhAdapter
 from .onlinejobs_ph import OnlineJobsAdapter
 from .remotive import RemotiveAdapter
 
@@ -14,12 +16,16 @@ ADAPTERS: list[SourceAdapter] = [
     RemotiveAdapter(),
     JobicyAdapter(),
     ArbeitnowAdapter(),
+    CareerjetPhAdapter(),
+    JooblePhAdapter(),
 ]
 
 __all__ = [
     "ADAPTERS",
     "ArbeitnowAdapter",
+    "CareerjetPhAdapter",
     "JobicyAdapter",
+    "JooblePhAdapter",
     "OnlineJobsAdapter",
     "RemotiveAdapter",
     "SourceAdapter",

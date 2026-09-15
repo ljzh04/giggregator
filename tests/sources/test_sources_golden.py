@@ -11,7 +11,9 @@ from conftest import FIXTURE_FILES, fixture_bytes
 from giggregator import models
 from giggregator.sources import ADAPTERS
 from giggregator.sources.arbeitnow import ArbeitnowAdapter
+from giggregator.sources.careerjet_ph import CareerjetPhAdapter
 from giggregator.sources.jobicy import JobicyAdapter
+from giggregator.sources.jooble_ph import JooblePhAdapter
 from giggregator.sources.onlinejobs_ph import OnlineJobsAdapter
 from giggregator.sources.remotive import RemotiveAdapter
 
@@ -25,7 +27,7 @@ def _parse(adapter_id):
 
 
 def test_registry_has_fixture_sources():
-    assert {"onlinejobs_ph", "remotive", "jobicy", "arbeitnow"} <= set(ADAPTER_BY_ID)
+    assert {"onlinejobs_ph", "remotive", "jobicy", "arbeitnow", "jooble_ph"} <= set(ADAPTER_BY_ID)
 
 
 def test_remotive_golden():
@@ -83,12 +85,63 @@ def test_onlinejobs_pay_variety_preserved():
     assert any("$" in v for v in pay_values)
 
 
+def test_jooble_golden():
+    listings = _parse("jooble_ph")
+    assert len(listings) == 20
+    assert all(listing.source_id == "jooble_ph" for listing in listings)
+    assert all(listing.title and listing.url for listing in listings)
+    first = listings[0]
+    assert first.title == "Remote Copy Strategist"
+    assert first.company == "Coalition Technologies"
+    assert first.pay_raw == "$17 - $35 per hour"  # salary passed through raw
+    assert all("<" not in (listing.body or "") for listing in listings)
+
+
+def test_jooble_pay_variety_preserved():
+    listings = _parse("jooble_ph")
+    pay_values = [listing.pay_raw for listing in listings if listing.pay_raw]
+    assert pay_values, "fixture includes salary-bearing listings"
+    assert any("per hour" in v for v in pay_values)
+    assert any("k" in v.lower() for v in pay_values)
+    # empty-salary listings still enter the pipeline (body-scan fallback)
+    assert any(not listing.pay_raw for listing in listings)
+
+
+def test_careerjet_skips_without_key_and_parses_structured_salary():
+    # no network in tests: without a key fetch returns an empty JOBS payload
+    import os
+    from unittest import mock
+
+    from giggregator.sources.careerjet_ph import CareerjetPhAdapter
+
+    with mock.patch.dict(os.environ, {}, clear=False):
+        with mock.patch("giggregator.config.CAREERJET_API_KEY", ""):
+            payload = CareerjetPhAdapter().fetch()
+    assert CareerjetPhAdapter().parse(payload) == []
+
+    sample = (
+        b'{"type": "JOBS", "hits": 1, "jobs": [{"title": "VA <b>Remote</b>",'
+        b' "company": "Acme", "date": "Mon, 15 Sep 2025 10:00:00 GMT",'
+        b' "description": "Data entry work", "locations": "Manila",'
+        b' "salary_min": 30000, "salary_max": 40000,'
+        b' "salary_currency_code": "PHP", "salary_type": "M",'
+        b' "url": "https://example.com/job/1"}]}'
+    )
+    (listing,) = CareerjetPhAdapter().parse(sample)
+    assert listing.title == "VA Remote"  # HTML stripped from titles
+    assert listing.pay_raw == "PHP 30000-40000 per month"
+    # LOCATIONS-type responses carry no jobs
+    assert CareerjetPhAdapter().parse(b'{"type": "LOCATIONS", "locations": []}') == []
+
+
 def test_bad_payload_does_not_explode():
     # garbage input -> empty result, never an exception (log-and-skip contract)
     assert RemotiveAdapter().parse(b"{not json") == []
     assert JobicyAdapter().parse(b"{not json") == []
     assert ArbeitnowAdapter().parse(b"{not json") == []
     assert OnlineJobsAdapter().parse(b"<html>no jobs here</html>") == []
+    assert JooblePhAdapter().parse(b"{not json") == []
+    assert CareerjetPhAdapter().parse(b"{not json") == []
 
 
 def test_raw_listing_shape():

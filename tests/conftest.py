@@ -18,6 +18,7 @@ FIXTURE_FILES = {
     "jobicy": ("jobicy", "jobicy_20260915_01.json"),
     "arbeitnow": ("arbeitnow", "arbeitnow_20260915_01.json"),
     "onlinejobs_ph": ("onlinejobs_ph", "onlinejobs_ph_20260915_01.html"),
+    "jooble_ph": ("jooble_ph", "jooble_ph_20260916_01.json"),
 }
 
 
