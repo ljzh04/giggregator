@@ -7,6 +7,7 @@ Weights live in config.py; changing them requires a docs/DECISIONS.md entry.
 from __future__ import annotations
 
 import bisect
+import re
 from datetime import datetime
 
 from . import config, models
@@ -67,6 +68,35 @@ def trust_factor(source_reliability: float, trust_flags: list[str]) -> float:
     """Source health minus soft-flag penalties. Hard-flagged gigs are excluded upstream."""
     soft_flags = [f for f in trust_flags if f != "fee_required"]
     return round(max(0.0, min(1.0, source_reliability - 0.10 * len(soft_flags))), 6)
+
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _tokens(text: str) -> set[str]:
+    return set(_TOKEN_RE.findall(text.lower().replace("_", " ")))
+
+
+def match_query(query: str, gig: models.Gig) -> float:
+    """Query-time fit signal for /search re-ranking. Pure; 0.0..1.0.
+
+    Token overlap of the query against title (x2), tags, and category.
+    Stored scores keep match=DEFAULT_MATCH (anonymous baseline); this only
+    re-orders search results so query fit beats generic pay/freshness.
+    """
+    qtokens = _tokens(query)
+    if not qtokens:
+        return config.DEFAULT_MATCH
+    title_tokens = _tokens(gig.title)
+    tag_tokens = _tokens(" ".join(gig.tags))
+    cat_tokens = _tokens(gig.category)
+    total = 0.0
+    for tok in qtokens:
+        if tok in title_tokens:
+            total += 2.0
+        elif tok in tag_tokens or tok in cat_tokens:
+            total += 1.0
+    return round(min(1.0, total / (2.0 * len(qtokens))), 6)
 
 
 

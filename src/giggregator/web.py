@@ -204,7 +204,14 @@ def search(q: str = "", category: str = "", device: str = "", hours: str = "",
         gigs = [g for g in gigs if g.requirements.hours == hours]
     if min_pay > 0:
         gigs = [g for g in gigs if (g.pay.hourly_equiv_php or 0) >= min_pay]
-    gigs.sort(key=lambda g: g.scores.get("relevance", 0), reverse=True)
+    if q.strip():
+        from .score import match_query
+
+        scored = [(match_query(q, g), g.scores.get("relevance", 0), g) for g in gigs]
+        scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        gigs = [g for _, _, g in scored]
+    else:
+        gigs.sort(key=lambda g: g.scores.get("relevance", 0), reverse=True)
     active_filters = " ".join(
         f"<span class='badge'>{_esc(k)}={_esc(v)}</span>"
         for k, v in [("q", q), ("category", category), ("device", device),

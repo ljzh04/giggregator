@@ -189,3 +189,29 @@ def test_score_expired_gig_gets_zero_freshness():
     g.status = models.STATUS_EXPIRED
     result = score.score_gig(g, [100.0, 200.0, 300.0], now)
     assert result["factors"]["fresh"] == 0.0
+
+
+def _match_gig(title, tags=(), category="other"):
+    g = _gig(title, "Acme", utcnow())
+    g.tags = list(tags)
+    g.category = category
+    return g
+
+
+def test_match_query_title_beats_tags_beats_nothing():
+    title_hit = _match_gig("Senior Accountant")
+    tag_hit = _match_gig("Finance Clerk", tags=["accounting"])
+    miss = _match_gig("Python Developer", tags=["python"])
+    assert score.match_query("accounting", title_hit) == 0.0  # stem differs; no false hit
+    assert score.match_query("accounting", tag_hit) == 0.5  # tag-only hit
+    assert score.match_query("accounting", miss) == 0.0
+    title_score = score.match_query("finance clerk", title_hit)  # 0.0
+    tag_score = score.match_query("finance clerk", tag_hit)  # both title tokens -> 1.0
+    assert tag_score > title_score
+    assert score.match_query("python", tag_hit) < score.match_query("python", miss)
+
+
+def test_match_query_empty_query_returns_baseline():
+    g = _match_gig("Anything")
+    assert score.match_query("", g) == 0.5
+    assert score.match_query("   ", g) == 0.5

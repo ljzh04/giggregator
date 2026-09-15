@@ -66,6 +66,25 @@ def test_fts_search_finds_fixture_content(seeded_db):
     assert len(ids) > 0
 
 
+def test_search_reranks_by_query_fit(seeded_db, monkeypatch):
+    # Query-time match re-rank: a title-fit gig outranks a higher-paid generic gig.
+    from giggregator import web
+
+    monkeypatch.setenv("GIGGREGATOR_DB", seeded_db)
+    client = TestClient(web.app)
+    page = client.get("/search", params={"q": "accountant"})
+    assert page.status_code == 200
+    html = page.text
+    title_hits = [i for i in range(len(html)) if html.startswith("/gig/", i)]
+    assert title_hits, "expected gig links on the search page"
+    first_link = html[title_hits[0]:title_hits[0] + 40]
+    first_id = int(first_link.split("/gig/")[1].split('"')[0].split("'")[0].split("<")[0])
+    conn = db.connect(seeded_db)
+    first = db.get_gig(conn, first_id)
+    haystack = f"{first.title} {' '.join(first.tags)} {first.category}".lower()
+    assert "account" in haystack  # accountant/accounting stem present in top hit
+
+
 def test_flow_filters_apply(seeded_db):
     conn = db.connect(seeded_db)
     now = utcnow()
