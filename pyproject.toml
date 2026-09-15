@@ -8,6 +8,7 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "libsql>=0.1.11",
 ]
 
 [dependency-groups]

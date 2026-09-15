@@ -6,6 +6,8 @@ new ADR entry (AGENTS.md iron rule 4).
 
 from __future__ import annotations
 
+import os
+
 # --- scoring weights (ADR-0007) ---
 WEIGHTS: dict[str, float] = {
     "pay": 0.30,
@@ -54,3 +56,10 @@ SOURCE_RELIABILITY_DEFAULT = 0.8  # tier-1 sources until health data says otherw
 # --- ingest politeness ---
 HTTP_USER_AGENT = "GiggregatorBot/0.1 (+https://github.com/giggregator; respectful crawler)"
 HTTP_TIMEOUT_SECONDS = 30.0
+
+# --- publisher-API keys (CareerJet / Jooble) ---
+# Keys live in env vars only — never in code, never pasted in chat. Adapters skip
+# themselves (log + continue) when their key is absent, so ingest stays green pre-key.
+CAREERJET_AFFILIATE_ID = os.environ.get("GIGGREGATOR_CAREERJET_AFFILIATE_ID", "")
+CAREERJET_API_KEY = os.environ.get("GIGGREGATOR_CAREERJET_KEY", "")
+JOOBLE_API_KEY = os.environ.get("GIGGREGATOR_JOOBLE_KEY", "")

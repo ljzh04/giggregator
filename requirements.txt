@@ -1,0 +1,5 @@
+# Minimal serverless bundle: web.py chain is stdlib + FastAPI only.
+# (httpx/bs4 are ingest-only and stay out of the cold-start path.)
+# libsql is needed when TURSO_DATABASE_URL is set (ADR-0011 remote backend).
+fastapi>=0.115
+libsql>=0.1.11

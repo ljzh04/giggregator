@@ -1,9 +1,15 @@
 """SQLite + FTS5 storage (ADR-0002). Schema lifecycle: init_db is the migration entry
-point; future schema changes go through this module with a DECISIONS.md entry."""
+point; future schema changes go through this module with a DECISIONS.md entry.
+
+Storage backends (ADR-0011): local SQLite file by default; when TURSO_DATABASE_URL is
+set, a remote Turso/libSQL database over HTTPS (same engine, same SQL, FTS5 included).
+The _RemoteConn wrapper below makes both backends behave identically to the rest of
+the codebase — call sites never branch on backend."""
 
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import timedelta
 from typing import Any
@@ -68,7 +74,95 @@ END;
 """
 
 
-def connect(path: str = ":memory:") -> sqlite3.Connection:
+class _Row(dict):
+    """Dict-based row emulating sqlite3.Row: name access with integer fallback.
+
+    The libsql driver has no row_factory support, so remote results are wrapped in
+    one of these to keep `row["col"]` call sites identical across backends."""
+
+    def __init__(self, columns: list[str], values: tuple) -> None:
+        super().__init__(zip(columns, values, strict=True))
+        self._values = tuple(values)
+
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            return self._values[key]
+        return super().__getitem__(key)
+
+
+class _RemoteCursor:
+    """Wraps a libsql cursor, converting fetched tuples into _Row objects."""
+
+    def __init__(self, cur: Any) -> None:
+        self._cur = cur
+
+    def __iter__(self) -> _RemoteCursor:
+        return self
+
+    def __next__(self) -> _Row:
+        return self._wrap(next(self._cur))
+
+    def _wrap(self, values: tuple | None) -> _Row | None:
+        if values is None:
+            return None
+        cols = [d[0] for d in (self._cur.description or [])]
+        return _Row(cols, values)
+
+    @property
+    def description(self) -> Any:
+        return self._cur.description
+
+    @property
+    def rowcount(self) -> int:
+        return getattr(self._cur, "rowcount", -1)
+
+    @property
+    def lastrowid(self) -> int | None:
+        return getattr(self._cur, "lastrowid", None)
+
+    def fetchone(self) -> _Row | None:
+        return self._wrap(self._cur.fetchone())
+
+    def fetchall(self) -> list[_Row]:
+        return [self._wrap(v) for v in self._cur.fetchall()]
+
+
+class _RemoteConn:
+    """Connection wrapper over the libsql driver exposing the sqlite3 surface that
+    giggregator uses (execute/commit/executescript, name-access rows)."""
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, params: tuple = ()) -> _RemoteCursor:
+        return _RemoteCursor(self._conn.execute(sql, params))
+
+    def executescript(self, script: str) -> None:
+        self._conn.executescript(script)
+
+    def commit(self) -> None:
+        self._conn.commit()
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def connect(path: str = ":memory:") -> sqlite3.Connection | _RemoteConn:
+    """Open the giggregator database.
+
+    Default: local SQLite file (or :memory: for tests). When TURSO_DATABASE_URL is
+    set (production: Vercel web app, GitHub Actions ingest), connect to the remote
+    Turso/libSQL database instead. Tests never load .env, so they always stay local.
+    """
+    url = os.environ.get("TURSO_DATABASE_URL")
+    if url and path != ":memory:":
+        import libsql
+
+        remote = _RemoteConn(
+            libsql.connect(database=url, auth_token=os.environ.get("TURSO_AUTH_TOKEN", ""))
+        )
+        remote.executescript(SCHEMA)
+        return remote
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
@@ -87,7 +181,9 @@ def upsert_source(conn: sqlite3.Connection, source_id: str, tier: int, cadence_h
     conn.commit()
 
 
-def record_source_success(conn: sqlite3.Connection, source_id: str, at_iso: str, count: int) -> None:
+def record_source_success(
+    conn: sqlite3.Connection, source_id: str, at_iso: str, count: int
+) -> None:
     conn.execute(
         "UPDATE sources SET last_success_at = ?, last_error = NULL, listings_7d = ? WHERE id = ?",
         (at_iso, count, source_id),
@@ -128,12 +224,27 @@ def _earliest(a: str | None, b: str | None) -> str | None:
 
 def _gig_values(gig: models.Gig) -> list[Any]:
     return [
-        gig.dedupe_key, json.dumps(gig.source_ids), gig.url, gig.title, gig.company, gig.body,
-        _iso(gig.posted_at), _iso(gig.first_seen_at), _iso(gig.last_verified_at), gig.status,
-        json.dumps(gig.pay.__dict__), json.dumps(gig.requirements.__dict__), gig.payout_cadence,
-        json.dumps(gig.tags), gig.category, int(gig.no_experience_friendly),
-        json.dumps(gig.trust_flags), gig.location_raw, gig.pay.hourly_equiv_php,
-        gig.pay.confidence, _iso(gig.first_seen_at),
+        gig.dedupe_key,
+        json.dumps(gig.source_ids),
+        gig.url,
+        gig.title,
+        gig.company,
+        gig.body,
+        _iso(gig.posted_at),
+        _iso(gig.first_seen_at),
+        _iso(gig.last_verified_at),
+        gig.status,
+        json.dumps(gig.pay.__dict__),
+        json.dumps(gig.requirements.__dict__),
+        gig.payout_cadence,
+        json.dumps(gig.tags),
+        gig.category,
+        int(gig.no_experience_friendly),
+        json.dumps(gig.trust_flags),
+        gig.location_raw,
+        gig.pay.hourly_equiv_php,
+        gig.pay.confidence,
+        _iso(gig.first_seen_at),
     ]
 
 
@@ -177,8 +288,18 @@ def upsert_gig(conn: sqlite3.Connection, gig: models.Gig) -> int:
         "UPDATE gigs SET source_ids = ?, body = ?, posted_at = ?, first_seen_at = ?,"
         " last_verified_at = ?, pay_hourly_php = ?, pay_confidence = ?, status = ?,"
         " updated_at = ? WHERE id = ?",
-        (json.dumps(merged_source_ids), body, posted_at, first_seen, values[8],
-         pay_hourly, pay_conf, status, values[20], existing["id"]),
+        (
+            json.dumps(merged_source_ids),
+            body,
+            posted_at,
+            first_seen,
+            values[8],
+            pay_hourly,
+            pay_conf,
+            status,
+            values[20],
+            existing["id"],
+        ),
     )
     conn.commit()
     return int(existing["id"])

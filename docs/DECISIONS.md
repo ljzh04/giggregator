@@ -110,3 +110,32 @@ consent or a documented API under its terms (iron rule 3: respect robots.txt/ToS
 **Consequence**: Tier-2 PH-formal-board coverage stays open; API-based Tier-1 candidates
 (CareerJet / Jooble publisher APIs, which grant keyed access under their own terms) are
 the next-best PH coverage bets.
+
+## ADR-0011 — Hosting: Vercel web + Turso (libSQL) DB + GitHub Actions ingest
+**Status**: accepted (2026-09-15)
+**Context**: Deployment needs a public URL (Careerjet publisher application) but the
+MVP stack is a server-rendered FastAPI app over a local SQLite/FTS5 file (ADR-0002/0005).
+Vercel's serverless filesystem is ephemeral — a SQLite file there does not survive
+instance recycling, and Vercel Hobby crons run at most once daily (contract cadence is
+2–6h). Postgres alternatives (Supabase/Neon) would require rewriting the FTS5 search
+layer; Supabase's free tier also pauses after 1 week of inactivity.
+**Decision**: Keep SQLite semantics and switch only the storage *location*:
+1. **DB**: Turso cloud database on the classic **libSQL** engine (FTS5 verified working
+   over its HTTP API). Local `db.connect()` behavior is unchanged; when
+   `TURSO_DATABASE_URL` is set, `db.connect()` connects remotely through the `libsql`
+   driver wrapped by `_RemoteConn` so call sites never branch on backend. The driver
+   lacks `row_factory`, so remote rows are wrapped in a dict-based `_Row` supporting
+   `row["col"]` access. Free tier: 5 GB / 500M reads / 10M writes per month.
+2. **Web**: Vercel (framework preset "Other"), `api/index.py` re-exporting
+   `giggregator.web:app` behind a catch-all rewrite; dependencies via an exported
+   `requirements.txt` (Vercel does not read pyproject/uv.lock).
+3. **Ingest**: GitHub Actions scheduled workflow (every 6h, manual dispatch available)
+   running `python -m giggregator.ingest --once` with Turso credentials as repo
+   secrets — restores contract cadence that Vercel Hobby crons cannot.
+**Consequences**: (a) engine lock-in to libSQL-compatible SQLite — any future DB change
+must preserve FTS5 or rewrite `db.search_gig_ids` (DECISIONS entry required);
+(b) tests must never run with `TURSO_DATABASE_URL` exported — they always use local
+`:memory:`/tmp SQLite (iron rule 5); (c) search latency is network round-trip per page
+load; acceptable at MVP traffic, revisit with embedded replicas if it bites;
+(d) `.env` holds credentials locally and is gitignored; rotate tokens that have been
+exposed outside secret stores.

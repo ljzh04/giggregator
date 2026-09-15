@@ -41,8 +41,8 @@ Rules (see also `AGENTS.md` iron rules 3 & 5):
 | arbeitnow | 1 | Global remote JSON API (remote-only gate) | 12h | **MVP live-verified** | `published_at` often null → fallbacks |
 | remoteok | 1 | — | — | blocked | Cloudflare JS challenge for plain clients |
 | weworkremotely | 1 | — | — | blocked | 403 for plain clients |
-| careerjet_ph | 1 | PH jobs API, WFH-keyword queries | 6h | planned | |
-| jooble_ph | 1 | PH jobs API | 6h | planned | |
+| careerjet_ph | 1 | PH jobs API, WFH-keyword queries | 6h | planned — awaiting publisher key | signup at careerjet.com/partners/api; per-request user_ip required (end-user IP, not server IP); no static egress IP on Vercel/Actions so skip any server-IP whitelist field |
+| jooble_ph | 1 | PH jobs API | 6h | planned — awaiting publisher key | signup at jooble.org/api/about; free quota is 500 lifetime requests/key — design cadence around it |
 | jobstreet_ph | 2 | Dominant PH formal board (absorbed Kalibrr), home-based filter | daily | blocked | ToS check 2026-09-15: ph.jobstreet.com/terms cl. d bars aggregating/copying any site content without agreement; SEEK terms bar robots/screen-scraping without prior written consent — no adapter without consent (ADR-0010) |
 | indeed_ph | 2 | PH remote filter listings | daily | planned | |
 | upwork_public | 2 | Freelance/gig search | 12h | planned | public search only |

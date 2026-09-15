@@ -11,6 +11,9 @@ build/
 *.sqlite3
 *.db
 *.sqlite
+giggregator.db
+# ...except the committed read-only seed snapshot served by the Vercel deploy
+!seed/seed.db
 
 # Env & local
 .env
@@ -20,3 +23,4 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+.vercel
