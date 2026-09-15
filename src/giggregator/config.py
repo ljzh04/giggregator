@@ -66,3 +66,10 @@ CAREERJET_REFERER = os.environ.get(
     "GIGGREGATOR_CAREERJET_REFERER", "https://giggregator.vercel.app/"
 )
 JOOBLE_API_KEY = os.environ.get("GIGGREGATOR_JOOBLE_KEY", "")
+# Jooble deferral: the free key is capped at 500 lifetime requests, so Jooble
+# ingest stays OFF unless explicitly enabled (set to "1" to re-enable).
+JOOBLE_ENABLED = os.environ.get("GIGGREGATOR_JOOBLE_ENABLED", "0") == "1"
+
+# Vercel cron shared secret: the /cron/ingest route requires
+# Authorization: Bearer <CRON_SECRET>. Empty = route disabled (404).
+CRON_SECRET = os.environ.get("GIGGREGATOR_CRON_SECRET", "")

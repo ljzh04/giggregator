@@ -6,14 +6,15 @@ DB path: env GIGGREGATOR_DB (default ./giggregator.db)
 
 from __future__ import annotations
 
+import hmac
 import html
 import os
 import sqlite3
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from . import db, flows
+from . import config, db, flows, ingest
 from .normalize import utcnow
 
 app = FastAPI(title="Giggregator")
@@ -255,3 +256,36 @@ def gig_detail(gig_id: int) -> str:
         f"<h3>Listing text</h3><p>{_esc(gig.body[:3000])}</p>"
     )
     return _PAGE.format(title=gig.title, body=body)
+
+
+@app.api_route("/cron/ingest", methods=["GET", "POST"])
+def cron_ingest(request: Request) -> JSONResponse:
+    """Vercel-cron ingest hook: one full ingest cycle against the live DB.
+
+    Vercel Cron Jobs issue a GET carrying ``Authorization: Bearer
+    <CRON_SECRET>`` natively; manual runs can POST with the same header.
+    Constant-time compare; 404 when no secret is configured so the route is
+    inert locally. Per-adapter isolation in ``ingest`` keeps the cycle green
+    if one source fails (e.g. CareerJet from a non-whitelisted egress IP).
+    """
+    secret = config.CRON_SECRET
+    if not secret:
+        return JSONResponse({"ok": False, "error": "cron disabled"}, status_code=404)
+    auth = request.headers.get("authorization", "")
+    if not hmac.compare_digest(auth, f"Bearer {secret}"):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    conn = get_conn()
+    stored = rescored = flagged = 0
+    per_source: dict[str, dict[str, int]] = {}
+    for adapter in ingest.ADAPTERS:
+        try:
+            payload = adapter.fetch()
+            n_stored, n_flagged = ingest.ingest_adapter_payload(conn, adapter, payload)
+            per_source[adapter.meta.id] = {"stored": n_stored, "flagged": n_flagged}
+            stored += n_stored
+            flagged += n_flagged
+        except Exception as exc:  # noqa: BLE001 - one bad source must not fail the cycle
+            per_source[adapter.meta.id] = {"error": str(exc)}
+    rescored = ingest.rescore_all(conn)
+    return JSONResponse({"ok": True, "stored": stored, "rescored": rescored,
+                         "flagged": flagged, "sources": per_source})

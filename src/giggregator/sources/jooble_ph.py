@@ -4,11 +4,11 @@ Endpoint: POST https://jooble.org/api/{KEY} with a JSON body
 (``keywords`` + ``location`` required). ``location="Philippines"`` scopes to PH;
 ``keywords="remote"`` keeps the scope contract (WFH/online work).
 
-Quota: the free key is limited to 500 lifetime requests, so fetch is a single
-small page (``resultOnPage=20``) per ingest cycle — cadence is throttled via
-``cadence_hours`` and fixtures are committed so tests never touch the quota.
-No key in code: without ``GIGGREGATOR_JOOBLE_KEY`` fetch skips itself with an
-empty payload so ingest stays green pre-key.
+Quota: the free key is limited to 500 lifetime requests, so Jooble ingest is
+DEFERRED by default (``GIGGREGATOR_JOOBLE_ENABLED=1`` re-enables one small page
+of ``resultOnPage=20`` per cycle). Fixtures are committed so tests never touch
+the quota. No key in code: without ``GIGGREGATOR_JOOBLE_KEY`` fetch skips itself
+with an empty payload so ingest stays green pre-key.
 """
 
 from __future__ import annotations
@@ -41,6 +41,10 @@ class JooblePhAdapter(SourceAdapter):
     fetch_url = API_URL.format(key="{key}")
 
     def fetch(self) -> str | bytes:
+        if not config.JOOBLE_ENABLED:
+            print("[jooble_ph] SKIP: deferred (set GIGGREGATOR_JOOBLE_ENABLED=1 to re-enable)",
+                  file=sys.stderr)
+            return b'{"totalCount": 0, "jobs": []}'
         if not config.JOOBLE_API_KEY:
             print("[jooble_ph] SKIP: no GIGGREGATOR_JOOBLE_KEY in env", file=sys.stderr)
             return b'{"totalCount": 0, "jobs": []}'

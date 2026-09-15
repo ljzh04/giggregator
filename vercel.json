@@ -3,6 +3,9 @@
     { "source": "/(.*)", "destination": "/api/index/$1" }
   ],
   "functions": {
-    "api/index.py": { "regions": ["hnd1"] }
-  }
+    "api/index.py": { "regions": ["hnd1"], "maxDuration": 300 }
+  },
+  "crons": [
+    { "path": "/cron/ingest", "schedule": "0 1 * * *" }
+  ]
 }

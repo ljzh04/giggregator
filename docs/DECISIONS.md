@@ -159,3 +159,24 @@ detail page keeps the full-row `get_gig`; (c) pin the function to `hnd1`
 **Consequences**: warm latencies home 0.64s / search 0.74s / flow 0.48s /
 detail 0.42s (from ~2.6s). Region pin must move with the DB if it migrates;
 card queries must gain any column `render_listing`/flow filters need.
+
+## ADR-0013 — Vercel cron ingest + Jooble deferred
+**Status**: accepted (2026-09-16)
+**Context**: ADR-0011 prescribed GitHub Actions ingest because Vercel Hobby crons
+run at most once daily. The user explicitly requested Vercel cron instead, and
+Jooble's free quota is 500 *lifetime* requests per key — a daily cron would burn
+it in ~16 months of unattended runs, and any bug-loop would burn it in a day.
+**Decision**: (a) `vercel.json` gains `crons: [{path: /cron/ingest, schedule:
+"0 1 * * *"}]` (09:01 PHT daily) plus `maxDuration: 300` for the ingest cycle;
+the route lives in the existing web app (`GET`+`POST /cron/ingest`, Vercel Cron
+sends GET with `Authorization: Bearer ${CRON_SECRET}`), guarded by
+`GIGGREGATOR_CRON_SECRET` via constant-time compare — empty secret = 404, wrong
+secret = 401. It reuses `ingest.ingest_adapter_payload` + `rescore_all` with
+per-adapter try/except so one bad source can't fail the cycle. (b) Jooble
+ingest is deferred: `GIGGREGATOR_JOOBLE_ENABLED` (default off) gates
+`jooble_ph.fetch()`; parse path untouched so fixtures/golden tests still run.
+**Consequences**: daily cadence only (Hobby limit) — freshness expectations drop
+vs the 2–6h contract; GitHub Actions remains the upgrade path if faster cadence
+is needed. Jooble quota held (~2 of 500 used); re-enable only for explicit
+one-shot refreshes. CareerJet-from-Vercel may 403 until the egress IP is
+whitelisted — per-adapter isolation contains it.
