@@ -1,7 +1,7 @@
 """Ingest CLI: fetch -> parse -> enrich -> dedupe/store -> rescore.
 
 Usage:
-    uv run python -m giggregator.ingest --once [--db giggregator.db]
+    uv run python -m giggregator.ingest --once [--db giggregator.db] [--only careerjet_ph]
 
 Network only happens in adapter.fetch(); parse/enrich/store are offline and unit-tested.
 """
@@ -48,11 +48,12 @@ def rescore_all(conn, weights: dict[str, float] | None = None) -> int:
     return count
 
 
-def run(db_path: str = "giggregator.db") -> int:
+def run(db_path: str = "giggregator.db", only: str | None = None) -> int:
     conn = db.connect(db_path)
     db.set_fx(conn, "USD", config.USD_PHP_FALLBACK, utcnow().isoformat())
     total = 0
-    for adapter in ADAPTERS:
+    adapters = [a for a in ADAPTERS if a.meta.id == only] if only else ADAPTERS
+    for adapter in adapters:
         db.upsert_source(conn, adapter.meta.id, adapter.meta.tier, adapter.meta.cadence_hours)
         try:
             payload = adapter.fetch()
@@ -72,8 +73,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="giggregator.ingest")
     parser.add_argument("--once", action="store_true", help="run one ingest cycle (MVP default)")
     parser.add_argument("--db", default="giggregator.db", help="sqlite db path")
+    parser.add_argument("--only", default=None, choices=[a.meta.id for a in ADAPTERS],
+                        help="run a single adapter (e.g. home-IP CareerJet top-up to Turso)")
     args = parser.parse_args()
-    run(args.db)
+    run(args.db, only=args.only)
 
 
 if __name__ == "__main__":

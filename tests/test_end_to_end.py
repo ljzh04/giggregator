@@ -101,3 +101,22 @@ def test_dedupe_merges_across_sources(seeded_db):
     # there may or may not be overlaps, but any that exist must be merged.
     for gig in multi:
         assert len(gig.source_ids) == len(set(gig.source_ids))
+
+
+def test_run_only_single_adapter(tmp_path):
+    # --only runs one adapter (home-IP CareerJet top-up); others untouched.
+    path = str(tmp_path / "only.db")
+    conn = db.connect(path)
+    db.set_fx(conn, "USD", 58.0, utcnow().isoformat())
+    adapter = ADAPTER_BY_ID["careerjet_ph"]
+    folder, filename = FIXTURE_FILES["careerjet_ph"]
+    data = fixture_bytes(f"{folder}/{filename}")
+    adapter.fetch = (lambda: data)
+    try:
+        stored = ingest.run(path, only="careerjet_ph")
+    finally:
+        del adapter.fetch  # restore bound method
+    assert stored > 0
+    conn = db.connect(path)
+    rows = conn.execute("SELECT id FROM sources").fetchall()
+    assert [r["id"] for r in rows] == ["careerjet_ph"]
