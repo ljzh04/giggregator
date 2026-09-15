@@ -105,6 +105,7 @@ class CareerjetPhAdapter(SourceAdapter):
             headers={
                 "Authorization": f"Basic {token}",
                 "User-Agent": config.HTTP_USER_AGENT,
+                "Referer": config.CAREERJET_REFERER,
             },
             timeout=config.HTTP_TIMEOUT_SECONDS,
             follow_redirects=True,

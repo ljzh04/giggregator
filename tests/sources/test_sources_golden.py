@@ -27,7 +27,7 @@ def _parse(adapter_id):
 
 
 def test_registry_has_fixture_sources():
-    assert {"onlinejobs_ph", "remotive", "jobicy", "arbeitnow", "jooble_ph"} <= set(ADAPTER_BY_ID)
+    assert {"onlinejobs_ph", "remotive", "jobicy", "arbeitnow", "jooble_ph", "careerjet_ph"} <= set(ADAPTER_BY_ID)
 
 
 def test_remotive_golden():
@@ -103,6 +103,29 @@ def test_jooble_pay_variety_preserved():
     assert pay_values, "fixture includes salary-bearing listings"
     assert any("per hour" in v for v in pay_values)
     assert any("k" in v.lower() for v in pay_values)
+    # empty-salary listings still enter the pipeline (body-scan fallback)
+    assert any(not listing.pay_raw for listing in listings)
+
+
+def test_careerjet_golden():
+    listings = _parse("careerjet_ph")
+    assert len(listings) == 50
+    assert all(listing.source_id == "careerjet_ph" for listing in listings)
+    assert all(listing.title and listing.url for listing in listings)
+    first = listings[0]
+    assert first.title == "Remote Accountant (CPA)"
+    assert first.company == "remote raven"
+    assert first.url.startswith("https://jobviewtrack.com/")
+    assert all("<" not in (listing.title or "") for listing in listings)
+    assert all("<" not in (listing.body or "") for listing in listings)
+
+
+def test_careerjet_pay_variety_preserved():
+    listings = _parse("careerjet_ph")
+    pay_values = [listing.pay_raw for listing in listings if listing.pay_raw]
+    assert pay_values, "fixture includes salary-bearing listings"
+    assert any("per hour" in v for v in pay_values)
+    assert any("per month" in v for v in pay_values)
     # empty-salary listings still enter the pipeline (body-scan fallback)
     assert any(not listing.pay_raw for listing in listings)
 

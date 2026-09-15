@@ -62,4 +62,7 @@ HTTP_TIMEOUT_SECONDS = 30.0
 # themselves (log + continue) when their key is absent, so ingest stays green pre-key.
 CAREERJET_AFFILIATE_ID = os.environ.get("GIGGREGATOR_CAREERJET_AFFILIATE_ID", "")
 CAREERJET_API_KEY = os.environ.get("GIGGREGATOR_CAREERJET_KEY", "")
+CAREERJET_REFERER = os.environ.get(
+    "GIGGREGATOR_CAREERJET_REFERER", "https://giggregator.vercel.app/"
+)
 JOOBLE_API_KEY = os.environ.get("GIGGREGATOR_JOOBLE_KEY", "")
