@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+.venv/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# Dev databases & caches
+*.sqlite3
+*.db
+*.sqlite
+
+# Env & local
+.env
+.env.*
+.uv-cache/
+
+# OS
+.DS_Store
+Thumbs.db
