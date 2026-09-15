@@ -1,7 +1,7 @@
 """SQLite + FTS5 storage (ADR-0002). Schema lifecycle: init_db is the migration entry
 point; future schema changes go through this module with a DECISIONS.md entry.
 
-Storage backends (ADR-0011): local SQLite file by default; when TURSO_DATABASE_URL is
+Storage backends (ADR-0011): local SQLite file by default; when GIGGREGATOR_TURSO_DATABASE_URL is
 set, a remote Turso/libSQL database over HTTPS (same engine, same SQL, FTS5 included).
 The _RemoteConn wrapper below makes both backends behave identically to the rest of
 the codebase — call sites never branch on backend."""
@@ -129,13 +129,61 @@ class _RemoteCursor:
 
 class _RemoteConn:
     """Connection wrapper over the libsql driver exposing the sqlite3 surface that
-    giggregator uses (execute/commit/executescript, name-access rows)."""
+    giggregator uses (execute/commit/executescript, name-access rows).
 
-    def __init__(self, conn: Any) -> None:
+    The Hrana protocol drops idle streams server-side, so a long ingest cycle
+    (network fetches between writes) can hit "stream not found" / connection
+    errors. execute() therefore reconnects and retries transient transport
+    failures instead of aborting the whole run."""
+
+    _TRANSIENT = (
+        "stream not found",
+        "stream error",
+        "connection error",
+        "dns error",
+        "connection reset",
+        "timed out",
+        "timeout",
+        "temporarily unavailable",
+        "idle for too long",
+        "rolled back",
+        "sqlite_busy",
+    )
+    _RETRIES = 5
+
+    def __init__(self, conn: Any, url: str = "", token: str = "") -> None:
         self._conn = conn
+        self._url = url
+        self._token = token
+
+    def _reconnect(self, attempt: int) -> None:
+        import time
+
+        import libsql
+
+        time.sleep(min(2**attempt, 15))
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+        self._conn = libsql.connect(database=self._url, auth_token=self._token)
+
+    @classmethod
+    def _transient(cls, exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return "hrana" in msg and any(t in msg for t in cls._TRANSIENT)
 
     def execute(self, sql: str, params: tuple = ()) -> _RemoteCursor:
-        return _RemoteCursor(self._conn.execute(sql, params))
+        last: Exception | None = None
+        for attempt in range(self._RETRIES + 1):
+            try:
+                return _RemoteCursor(self._conn.execute(sql, params))
+            except Exception as exc:  # noqa: BLE001 — transport errors only retried
+                if not self._transient(exc) or attempt >= self._RETRIES:
+                    raise
+                last = exc
+                self._reconnect(attempt)
+        raise last  # pragma: no cover — loop always returns or raises
 
     def executescript(self, script: str) -> None:
         self._conn.executescript(script)
@@ -150,17 +198,18 @@ class _RemoteConn:
 def connect(path: str = ":memory:") -> sqlite3.Connection | _RemoteConn:
     """Open the giggregator database.
 
-    Default: local SQLite file (or :memory: for tests). When TURSO_DATABASE_URL is
+    Default: local SQLite file (or :memory: for tests). When GIGGREGATOR_TURSO_DATABASE_URL is
     set (production: Vercel web app, GitHub Actions ingest), connect to the remote
     Turso/libSQL database instead. Tests never load .env, so they always stay local.
     """
-    url = os.environ.get("TURSO_DATABASE_URL")
+    url = os.environ.get("GIGGREGATOR_TURSO_DATABASE_URL") or os.environ.get("TURSO_DATABASE_URL")
     if url and path != ":memory:":
         import libsql
 
-        remote = _RemoteConn(
-            libsql.connect(database=url, auth_token=os.environ.get("TURSO_AUTH_TOKEN", ""))
+        token = os.environ.get("GIGGREGATOR_TURSO_AUTH_TOKEN") or os.environ.get(
+            "TURSO_AUTH_TOKEN", ""
         )
+        remote = _RemoteConn(libsql.connect(database=url, auth_token=token), url, token)
         remote.executescript(SCHEMA)
         return remote
     conn = sqlite3.connect(path)
@@ -366,11 +415,49 @@ def get_gig(conn: sqlite3.Connection, gig_id: int) -> models.Gig | None:
     return gig_from_row(row) if row else None
 
 
+def active_count(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT COUNT(*) AS n FROM gigs WHERE status = 'active'").fetchone()
+    return int(row["n"])
+
+
 def active_gigs(conn: sqlite3.Connection) -> list[models.Gig]:
     rows = conn.execute(
         "SELECT * FROM gigs WHERE status = 'active' ORDER BY relevance DESC, id"
     ).fetchall()
     return [gig_from_row(r) for r in rows]
+
+
+# Columns for list pages: everything gig_from_row needs except the multi-KB
+# body (detail page only). '' AS body keeps gig_from_row working unchanged.
+_CARD_COLS = (
+    "id, dedupe_key, source_ids, url, title, company, '' AS body,"
+    " posted_at, first_seen_at, last_verified_at, status, pay_json,"
+    " requirements_json, payout_cadence, tags_json, category,"
+    " no_experience_friendly, trust_flags_json, location,"
+    " pay_hourly_php, pay_confidence, factors_json, relevance, updated_at"
+)
+
+
+def active_gig_cards(conn: sqlite3.Connection, limit: int | None = None) -> list[models.Gig]:
+    """Active gigs without body text — cheap over Hrana for list pages."""
+    sql = f"SELECT {_CARD_COLS} FROM gigs WHERE status = 'active' ORDER BY relevance DESC, id"
+    params: tuple = ()
+    if limit is not None:
+        sql += " LIMIT ?"
+        params = (limit,)
+    return [gig_from_row(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def get_gig_cards(conn: sqlite3.Connection, gig_ids: list[int]) -> list[models.Gig]:
+    """Body-free fetch for a known id set in one round trip (no N+1)."""
+    if not gig_ids:
+        return []
+    placeholders = ",".join("?" for _ in gig_ids)
+    rows = conn.execute(
+        f"SELECT {_CARD_COLS} FROM gigs WHERE id IN ({placeholders})", tuple(gig_ids)
+    ).fetchall()
+    by_id = {int(r["id"]): gig_from_row(r) for r in rows}
+    return [by_id[i] for i in gig_ids if i in by_id]
 
 
 def corpus_pay(conn: sqlite3.Connection) -> list[float]:

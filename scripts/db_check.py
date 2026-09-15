@@ -1,6 +1,6 @@
 """Live check of the configured DB backend (ADR-0011).
 
-With TURSO_DATABASE_URL set: round-trips one probe gig through the remote Turso/libSQL
+With GIGGREGATOR_TURSO_DATABASE_URL set: round-trips one probe gig through the remote Turso/libSQL
 database and removes it. Without it: same round-trip against the local SQLite file.
 Run: uv run --env-file .env python scripts/db_check.py
 """
@@ -13,7 +13,11 @@ from giggregator import db, models
 from giggregator.normalize import utcnow
 
 conn = db.connect(os.environ.get("GIGGREGATOR_DB", "giggregator.db"))
-backend = "remote (Turso/libSQL)" if os.environ.get("TURSO_DATABASE_URL") else "local sqlite"
+backend = (
+    "remote (Turso/libSQL)"
+    if os.environ.get("GIGGREGATOR_TURSO_DATABASE_URL") or os.environ.get("TURSO_DATABASE_URL")
+    else "local sqlite"
+)
 print(f"backend: {backend}")
 
 gig = models.Gig(

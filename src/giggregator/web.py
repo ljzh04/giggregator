@@ -19,8 +19,29 @@ from .normalize import utcnow
 app = FastAPI(title="Giggregator")
 
 
+_CONN = None
+_CONN_KEY = None
+
+
+def _is_remote() -> bool:
+    return bool(
+        os.environ.get("GIGGREGATOR_TURSO_DATABASE_URL")
+        or os.environ.get("TURSO_DATABASE_URL")
+    )
+
+
 def get_conn() -> sqlite3.Connection:
-    return db.connect(os.environ.get("GIGGREGATOR_DB", "giggregator.db"))
+    # ponytail: cache only the remote Turso connection (TLS + Hrana handshake
+    # per request is the ~3s warm cost on Vercel). Local sqlite connects are
+    # cheap and not thread-safe to share, so those stay per-request.
+    global _CONN, _CONN_KEY
+    key = os.environ.get("GIGGREGATOR_DB", "giggregator.db")
+    if not _is_remote():
+        return db.connect(key)
+    if _CONN is None or _CONN_KEY != key:
+        _CONN = db.connect(key)
+        _CONN_KEY = key
+    return _CONN
 
 
 # ---------------------------------------------------------------- rendering
@@ -134,7 +155,7 @@ def _flow_gigs(conn, flow, limit: int = 40):
     from .score import relevance
 
     now = utcnow()
-    gigs = [g for g in db.active_gigs(conn) if flow.matches(g, now)]
+    gigs = [g for g in db.active_gig_cards(conn) if flow.matches(g, now)]
     weights = flows.flow_weights(flow)
     for g in gigs:
         factors = g.scores.get("factors") or {}
@@ -148,11 +169,11 @@ def _flow_gigs(conn, flow, limit: int = 40):
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     conn = get_conn()
-    all_active = db.active_gigs(conn)
-    top = sorted(all_active, key=lambda g: g.scores.get("relevance", 0), reverse=True)[:40]
+    total = db.active_count(conn)
+    top = db.active_gig_cards(conn, limit=40)
     flagged = db.flagged_count(conn)
     body = (_flow_nav() + _table(top, ranked=True)
-            + f"<p class='meta'>Top {len(top)} of {len(all_active)} active listings."
+            + f"<p class='meta'>Top {len(top)} of {total} active listings."
               f" Flagged (scam-signal) listings excluded: {flagged}.</p>")
     return _PAGE.format(title="Home", body=body)
 
@@ -173,7 +194,7 @@ def search(q: str = "", category: str = "", device: str = "", hours: str = "",
            min_pay: float = 0.0) -> str:
     conn = get_conn()
     ids = db.search_gig_ids(conn, q)
-    gigs = [g for g in (db.get_gig(conn, i) for i in ids) if g is not None]
+    gigs = db.get_gig_cards(conn, ids)
     if category:
         gigs = [g for g in gigs if g.category == category]
     if device:

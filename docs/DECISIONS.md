@@ -122,7 +122,7 @@ layer; Supabase's free tier also pauses after 1 week of inactivity.
 **Decision**: Keep SQLite semantics and switch only the storage *location*:
 1. **DB**: Turso cloud database on the classic **libSQL** engine (FTS5 verified working
    over its HTTP API). Local `db.connect()` behavior is unchanged; when
-   `TURSO_DATABASE_URL` is set, `db.connect()` connects remotely through the `libsql`
+   `GIGGREGATOR_TURSO_DATABASE_URL` is set, `db.connect()` connects remotely through the `libsql`
    driver wrapped by `_RemoteConn` so call sites never branch on backend. The driver
    lacks `row_factory`, so remote rows are wrapped in a dict-based `_Row` supporting
    `row["col"]` access. Free tier: 5 GB / 500M reads / 10M writes per month.
@@ -134,8 +134,28 @@ layer; Supabase's free tier also pauses after 1 week of inactivity.
    secrets — restores contract cadence that Vercel Hobby crons cannot.
 **Consequences**: (a) engine lock-in to libSQL-compatible SQLite — any future DB change
 must preserve FTS5 or rewrite `db.search_gig_ids` (DECISIONS entry required);
-(b) tests must never run with `TURSO_DATABASE_URL` exported — they always use local
+(b) tests must never run with `GIGGREGATOR_TURSO_DATABASE_URL` exported — they always use local
 `:memory:`/tmp SQLite (iron rule 5); (c) search latency is network round-trip per page
 load; acceptable at MVP traffic, revisit with embedded replicas if it bites;
 (d) `.env` holds credentials locally and is gitignored; rotate tokens that have been
 exposed outside secret stores.
+
+## ADR-0012 — Vercel region pin + body-free list queries + rewrite path fix
+**Status**: accepted (2026-09-15)
+**Context**: Live site served real listings but warm pages took ~2.5–3.5s, and
+`/search`, `/flow/*`, `/gig/*` all rendered the home page. Three stacked causes:
+(1) a fresh libsql TLS+Hrana handshake per request; (2) `SELECT *` (bodies
+included) + N+1 per-id fetches on every list page; (3) the catch-all rewrite
+sent every path to `/api/index` with the original path dropped, so the ASGI
+wrapper mapped all routes to `/`. The Turso DB lives in ap-northeast-1 (Tokyo)
+while the function defaulted to a US region.
+**Decision**: (a) cache the remote connection module-level in `web.get_conn`
+(remote only — local sqlite stays per-request: cheap and not thread-safe to
+share); (b) `db.active_gig_cards` / `db.get_gig_cards` select all list columns
+except `body` (`'' AS body` keeps `gig_from_row` unchanged), home pushes
+`LIMIT 40` + `COUNT(*)` into SQL, search fetches ids in one round trip;
+detail page keeps the full-row `get_gig`; (c) pin the function to `hnd1`
+(Tokyo) in `vercel.json`; (d) rewrite to `/api/index/$1` so routes survive.
+**Consequences**: warm latencies home 0.64s / search 0.74s / flow 0.48s /
+detail 0.42s (from ~2.6s). Region pin must move with the DB if it migrates;
+card queries must gain any column `render_listing`/flow filters need.

@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(_ROOT, "src"))
 _SEED = os.path.join(_ROOT, "seed", "seed.db")
 _RUNTIME_DB = os.path.join(tempfile.gettempdir(), "giggregator.db")
 
-if os.environ.get("TURSO_DATABASE_URL"):
+if os.environ.get("GIGGREGATOR_TURSO_DATABASE_URL") or os.environ.get("TURSO_DATABASE_URL"):
     pass  # ADR-0011 remote backend takes precedence inside db.connect(); no seed needed.
 else:
     if not os.path.exists(_RUNTIME_DB):
@@ -33,6 +33,6 @@ async def app(scope, receive, send):
     if scope.get("type") == "http":
         path = scope.get("path", "")
         if path == "/api/index" or path.startswith("/api/index/"):
-            rest = path[len("/api/index"):] or "/"
+            rest = path[len("/api/index") :] or "/"
             scope = {**scope, "path": rest, "raw_path": rest.encode()}
     await fastapi_app(scope, receive, send)
