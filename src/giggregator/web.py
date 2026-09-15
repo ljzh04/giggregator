@@ -275,17 +275,17 @@ def cron_ingest(request: Request) -> JSONResponse:
     if not hmac.compare_digest(auth, f"Bearer {secret}"):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
     conn = get_conn()
-    stored = rescored = flagged = 0
+    stored = rescored = 0
     per_source: dict[str, dict[str, int]] = {}
     for adapter in ingest.ADAPTERS:
         try:
             payload = adapter.fetch()
-            n_stored, n_flagged = ingest.ingest_adapter_payload(conn, adapter, payload)
-            per_source[adapter.meta.id] = {"stored": n_stored, "flagged": n_flagged}
+            n_parsed, n_stored = ingest.ingest_adapter_payload(conn, adapter, payload)
+            per_source[adapter.meta.id] = {"stored": n_stored, "parsed": n_parsed}
             stored += n_stored
-            flagged += n_flagged
         except Exception as exc:  # noqa: BLE001 - one bad source must not fail the cycle
             per_source[adapter.meta.id] = {"error": str(exc)}
     rescored = ingest.rescore_all(conn)
+    flagged = db.flagged_count(conn)
     return JSONResponse({"ok": True, "stored": stored, "rescored": rescored,
                          "flagged": flagged, "sources": per_source})
