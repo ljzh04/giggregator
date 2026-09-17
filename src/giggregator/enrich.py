@@ -31,6 +31,7 @@ def enrich(raw: models.RawListing, *, fx: float = config.USD_PHP_FALLBACK) -> mo
     gig.category = normalize.categorize(gig.title, gig.body)
     gig.tags = normalize.extract_tags(text)
     gig.no_experience_friendly = normalize.is_no_experience_friendly(text)
+    gig.employment_type = normalize.employment_type(raw.employment_type_raw)
     gig.payout_cadence = normalize.payout_cadence(text, gig.pay.kind)
 
     # Scam signals: hard (fee_required) auto-excludes; soft (no_company) only downranks

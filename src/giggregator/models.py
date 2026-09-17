@@ -44,6 +44,14 @@ PAYOUT_WEEKLY = "weekly"
 PAYOUT_DAILY = "daily"
 PAYOUT_INSTANT = "instant_gcash"
 
+# employment / engagement type (surfaced from listing badges + source jobType fields)
+EMPLOYMENT_GIG = "gig"
+EMPLOYMENT_INTERNSHIP = "internship"
+EMPLOYMENT_CONTRACT = "contract"
+EMPLOYMENT_PART_TIME = "part_time"
+EMPLOYMENT_FULL_TIME = "full_time"
+EMPLOYMENT_UNKNOWN = "unknown"
+
 
 @dataclass
 class RawListing:
@@ -57,6 +65,7 @@ class RawListing:
     posted_at_raw: str | None = None  # ISO-ish string; parser may fall back to first_seen
     pay_raw: str | None = None
     location_raw: str = ""
+    employment_type_raw: str = ""  # raw badge / jobType text; normalize maps it
     fetched_at: datetime | None = None
 
 
@@ -100,6 +109,7 @@ class Gig:
     payout_cadence: str = PAYOUT_UNKNOWN
     tags: list[str] = field(default_factory=list)
     category: str = "other"
+    employment_type: str = EMPLOYMENT_UNKNOWN
     no_experience_friendly: bool = False
     trust_flags: list[str] = field(default_factory=list)
     location_raw: str = ""

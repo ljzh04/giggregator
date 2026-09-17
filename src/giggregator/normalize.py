@@ -459,3 +459,32 @@ def scam_flags(text: str, *, company: str = "") -> list[str]:
     if _DIRECT_CONTACT.search(low) and not _company_known(company):
         flags.append("no_company")
     return flags
+
+
+# ---------------------------------------------------------------- employment type
+
+# Order = reporting priority when a raw value lists several types: the narrower
+# engagement wins (gig/internship/contract before part/full time).
+_EMPLOYMENT_PATTERNS: list[tuple[str, str]] = [
+    (models.EMPLOYMENT_GIG, r"\bgig\b|per[ _-]task|one[ _-]off|project[ _-]based|per[ _-]piece"),
+    (models.EMPLOYMENT_INTERNSHIP, r"\bintern(?:ship)?\b"),
+    (models.EMPLOYMENT_CONTRACT, r"\bcontract\b|\bcontractor\b|freelanc"),
+    (models.EMPLOYMENT_PART_TIME, r"part[ _-]?time"),
+    (models.EMPLOYMENT_FULL_TIME, r"full[ _-]?time"),
+]
+
+
+def employment_type(text: str | None) -> str:
+    """Map a raw listing-type string (badge, jobType) to a canonical employment token.
+
+    Pure. Order-sensitive: when a raw value names several types the narrower engagement
+    wins (see _EMPLOYMENT_PATTERNS). Returns EMPLOYMENT_UNKNOWN when nothing matches —
+    never guessed (iron rule 1: a low-confidence value is fine, an invented one is not).
+    """
+    low = clean(text).lower()
+    if not low:
+        return models.EMPLOYMENT_UNKNOWN
+    for token, pattern in _EMPLOYMENT_PATTERNS:
+        if re.search(pattern, low):
+            return token
+    return models.EMPLOYMENT_UNKNOWN

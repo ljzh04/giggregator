@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
-from giggregator import db, dedupe, ingest, models, score
+from giggregator import db, dedupe, enrich, ingest, models, score
 from giggregator.normalize import utcnow
 
 
@@ -285,3 +285,52 @@ def test_rescore_wires_source_reliability_into_trust():
     }
     assert trust['["good_src"]'] == 0.8
     assert trust['["bad_src"]'] < trust['["good_src"]']
+
+
+def test_enrich_maps_employment_type_from_raw_listing():
+    raw = models.RawListing(
+        source_id="onlinejobs_ph",
+        url="https://example.com/data-entry",
+        title="Data Entry",
+        body="apply now",
+        employment_type_raw="Gig",
+    )
+    assert enrich.enrich(raw).employment_type == models.EMPLOYMENT_GIG
+    unknown = models.RawListing(
+        source_id="onlinejobs_ph", url="https://example.com/x", title="X", body="apply now"
+    )
+    assert enrich.enrich(unknown).employment_type == models.EMPLOYMENT_UNKNOWN
+
+
+def test_employment_type_round_trips_through_db_including_card_query():
+    conn = db.connect(":memory:")
+    now = utcnow()
+    g = _gig("Data Entry Gig", "Acme", now)
+    g.dedupe_key = dedupe.dedupe_key(g.company, g.title)
+    g.employment_type = models.EMPLOYMENT_GIG
+    gid = db.upsert_gig(conn, g)
+    assert db.get_gig(conn, gid).employment_type == models.EMPLOYMENT_GIG
+    (card,) = db.get_gig_cards(conn, [gid])  # body-free list query must carry it too
+    assert card.employment_type == models.EMPLOYMENT_GIG
+
+
+def test_migration_adds_employment_type_to_legacy_db(tmp_path):
+    # a DB created with the pre-change schema must gain the column on connect()
+    import sqlite3
+
+    path = str(tmp_path / "legacy.db")
+    legacy = sqlite3.connect(path)
+    legacy.executescript(db.SCHEMA.replace(", employment_type TEXT", ""))
+    legacy.commit()
+    legacy.close()
+
+    conn = db.connect(path)  # CREATE IF NOT EXISTS is a no-op; _migrate ALTERs
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(gigs)").fetchall()}
+    assert "employment_type" in cols
+    # and the migrated DB is usable end-to-end
+    now = utcnow()
+    g = _gig("Migrated Gig", "Acme", now)
+    g.dedupe_key = dedupe.dedupe_key(g.company, g.title)
+    g.employment_type = models.EMPLOYMENT_PART_TIME
+    gid = db.upsert_gig(conn, g)
+    assert db.get_gig(conn, gid).employment_type == models.EMPLOYMENT_PART_TIME

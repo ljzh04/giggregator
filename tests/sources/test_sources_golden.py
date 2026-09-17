@@ -95,6 +95,15 @@ def test_onlinejobs_pay_variety_preserved():
     assert any("$" in v for v in pay_values)
 
 
+def test_onlinejobs_badge_surfaces_employment_type():
+    # the Gig / Part Time / Full Time badge is now a structured field, not just prose
+    listings = _parse("onlinejobs_ph")
+    kinds = {listing.employment_type_raw for listing in listings}
+    assert {"Gig", "Part Time", "Full Time"} <= kinds  # real fixture badge values
+    assert all(listing.employment_type_raw for listing in listings)  # 30/30 carry a badge
+    assert any("[Type: " in listing.body for listing in listings)  # body text unchanged
+
+
 def test_onlinejobs_next_page_url_from_fixture():
     # real page-1 capture: li.active is page 1 -> link for page 2 (offset 30)
     url = next_page_url(fixture_bytes("onlinejobs_ph/onlinejobs_ph_20260915_01.html"))

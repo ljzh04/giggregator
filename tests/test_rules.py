@@ -109,3 +109,27 @@ def test_scam_soft_signal_does_not_hard_exclude():
     # soft flags downrank; only fee_required flips status in enrich()
     flags = normalize.scam_flags("call/text 09171234567", company="")
     assert "no_company" in flags and "fee_required" not in flags
+
+
+def test_employment_type_maps_badges_and_jobtypes():
+    assert normalize.employment_type("Gig") == models.EMPLOYMENT_GIG
+    assert normalize.employment_type("Part Time") == models.EMPLOYMENT_PART_TIME
+    assert normalize.employment_type("Full Time") == models.EMPLOYMENT_FULL_TIME
+    assert normalize.employment_type("full_time") == models.EMPLOYMENT_FULL_TIME  # remotive style
+    assert normalize.employment_type("Contract") == models.EMPLOYMENT_CONTRACT
+    assert normalize.employment_type("Freelance") == models.EMPLOYMENT_CONTRACT
+    assert normalize.employment_type("Internship") == models.EMPLOYMENT_INTERNSHIP
+
+
+def test_employment_type_prefers_narrower_form_when_several():
+    # jobType arrays arrive joined; the narrower engagement wins
+    assert normalize.employment_type("full-time, part-time") == models.EMPLOYMENT_PART_TIME
+    assert normalize.employment_type("part-time, gig") == models.EMPLOYMENT_GIG
+
+
+def test_employment_type_unknown_never_guessed():
+    # OnlineJobs' "Any" badge and free text must not invent a value (iron rule 1)
+    assert normalize.employment_type("Any") == models.EMPLOYMENT_UNKNOWN
+    assert normalize.employment_type("") == models.EMPLOYMENT_UNKNOWN
+    assert normalize.employment_type(None) == models.EMPLOYMENT_UNKNOWN
+    assert normalize.employment_type("We need someone reliable") == models.EMPLOYMENT_UNKNOWN

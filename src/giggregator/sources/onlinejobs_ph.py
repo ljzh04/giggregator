@@ -109,6 +109,7 @@ class OnlineJobsAdapter(SourceAdapter):
             title = normalize.clean(title_tag.get_text(" ", strip=True))
 
             body_parts: list[str] = []
+            listing_type = ""
             badge_match = _BADGE.search(str(title_tag))
             if badge_match:
                 listing_type = normalize.clean(badge_match.group(1))
@@ -149,6 +150,7 @@ class OnlineJobsAdapter(SourceAdapter):
                     posted_at_raw=posted.isoformat() if posted else None,
                     pay_raw=pay_raw,
                     location_raw="PH (home-based)",
+                    employment_type_raw=listing_type,
                     fetched_at=now,
                 )
             )

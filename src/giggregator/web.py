@@ -113,15 +113,23 @@ def _effort_display(gig) -> str:
     return line + ("<br>" + _esc(", ".join(extras)) if extras else "")
 
 
+def _employment_display(gig) -> str:
+    """Human-facing employment badge ('gig', 'part-time'), '' when unknown."""
+    employment = getattr(gig, "employment_type", "") or ""
+    return "" if employment in ("", "unknown") else employment.replace("_", "-")
+
+
 def render_listing(gig, rank: int | None = None) -> str:
     tags = " ".join(f"<span class='badge'>{_esc(t)}</span>" for t in gig.tags[:6])
     sources = ", ".join(_esc(s) for s in gig.source_ids)
     rel = gig.scores.get("relevance")
     rank_cell = f"{rank}. " if rank else ""
+    employment = _employment_display(gig)
+    meta = _esc(gig.category) + (f" · {_esc(employment)}" if employment else "")
+    meta += f" · {_age(gig.posted_at)} old · via {sources}"
     return (
         f"<tr><td>{rank_cell}<a href='/gig/{gig.id}'>{_esc(gig.title)}</a>"
-        f"<br><span class='meta'>{_esc(gig.company) or '<i>employer n/a</i>'} · "
-        f"{_esc(gig.category)} · {_age(gig.posted_at)} old · via {sources}</span></td>"
+        f"<br><span class='meta'>{_esc(gig.company) or '<i>employer n/a</i>'} · {meta}</span></td>"
         f"<td>{_pay_display(gig)}</td>"
         f"<td>{_effort_display(gig)}</td>"
         f"<td>{tags}</td>"
@@ -269,7 +277,8 @@ def gig_detail(gig_id: int) -> str:
     body = (
         "<p><a href='/'>&larr; back</a></p>"
         f"<h2>{_esc(gig.title)}</h2>"
-        f"<p class='meta'>{_esc(gig.company)} · {_esc(gig.category)} · via "
+        f"<p class='meta'>{_esc(gig.company)} · {_esc(gig.category)} · "
+        f"{_esc(gig.employment_type)} · via "
         f"{', '.join(_esc(s) for s in gig.source_ids)} · {_age(gig.posted_at)} old · "
         f"status: {_esc(gig.status)}</p>"
         f"<p><b>Pay:</b> {_pay_display(gig)}<br><span class='meta'>raw: "

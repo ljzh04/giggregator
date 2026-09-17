@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS gigs (
   status TEXT NOT NULL DEFAULT 'active',
   pay_json TEXT, requirements_json TEXT, payout_cadence TEXT,
   tags_json TEXT, category TEXT, no_experience_friendly INTEGER NOT NULL DEFAULT 0,
-  trust_flags_json TEXT, location TEXT,
+  trust_flags_json TEXT, location TEXT, employment_type TEXT,
   pay_hourly_php REAL, pay_confidence REAL NOT NULL DEFAULT 0,
   factors_json TEXT, relevance REAL NOT NULL DEFAULT 0,
   updated_at TEXT
@@ -195,6 +195,23 @@ class _RemoteConn:
         self._conn.close()
 
 
+def _migrate(conn) -> None:
+    """Idempotent additive migrations for databases created before a column existed.
+
+    SCHEMA uses CREATE TABLE IF NOT EXISTS, which cannot add a column to an existing
+    table, so additive columns are applied here on every connect. Only SQLite's
+    "duplicate column name" error is tolerated (the column is already present); anything
+    else propagates, so a real failure is never swallowed.
+    """
+    for ddl in ("ALTER TABLE gigs ADD COLUMN employment_type TEXT",):
+        try:
+            conn.execute(ddl)
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001 — only "already exists" is tolerated
+            if "duplicate column name" not in str(exc).lower():
+                raise
+
+
 def connect(path: str = ":memory:") -> sqlite3.Connection | _RemoteConn:
     """Open the giggregator database.
 
@@ -211,10 +228,12 @@ def connect(path: str = ":memory:") -> sqlite3.Connection | _RemoteConn:
         )
         remote = _RemoteConn(libsql.connect(database=url, auth_token=token), url, token)
         remote.executescript(SCHEMA)
+        _migrate(remote)
         return remote
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -344,6 +363,7 @@ def _gig_values(gig: models.Gig) -> list[Any]:
         gig.pay.hourly_equiv_php,
         gig.pay.confidence,
         _iso(gig.first_seen_at),
+        gig.employment_type,
     ]
 
 
@@ -361,8 +381,8 @@ def upsert_gig(conn: sqlite3.Connection, gig: models.Gig) -> int:
             "INSERT INTO gigs (dedupe_key, source_ids, url, title, company, body, posted_at,"
             " first_seen_at, last_verified_at, status, pay_json, requirements_json,"
             " payout_cadence, tags_json, category, no_experience_friendly, trust_flags_json,"
-            " location, pay_hourly_php, pay_confidence, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " location, pay_hourly_php, pay_confidence, updated_at, employment_type)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             values,
         )
         conn.commit()
@@ -386,7 +406,7 @@ def upsert_gig(conn: sqlite3.Connection, gig: models.Gig) -> int:
     conn.execute(
         "UPDATE gigs SET source_ids = ?, body = ?, posted_at = ?, first_seen_at = ?,"
         " last_verified_at = ?, pay_hourly_php = ?, pay_confidence = ?, status = ?,"
-        " updated_at = ? WHERE id = ?",
+        " updated_at = ?, employment_type = ? WHERE id = ?",
         (
             json.dumps(merged_source_ids),
             body,
@@ -397,6 +417,7 @@ def upsert_gig(conn: sqlite3.Connection, gig: models.Gig) -> int:
             pay_conf,
             status,
             values[20],
+            values[21],
             existing["id"],
         ),
     )
@@ -447,6 +468,7 @@ def gig_from_row(row: sqlite3.Row) -> models.Gig:
         payout_cadence=row["payout_cadence"] or models.PAYOUT_UNKNOWN,
         tags=json.loads(row["tags_json"] or "[]"),
         category=row["category"] or "other",
+        employment_type=row["employment_type"] or models.EMPLOYMENT_UNKNOWN,
         no_experience_friendly=bool(row["no_experience_friendly"]),
         trust_flags=json.loads(row["trust_flags_json"] or "[]"),
         location_raw=row["location"] or "",
@@ -483,7 +505,7 @@ _CARD_COLS = (
     "id, dedupe_key, source_ids, url, title, company, '' AS body,"
     " posted_at, first_seen_at, last_verified_at, status, pay_json,"
     " requirements_json, payout_cadence, tags_json, category,"
-    " no_experience_friendly, trust_flags_json, location,"
+    " no_experience_friendly, trust_flags_json, location, employment_type,"
     " pay_hourly_php, pay_confidence, factors_json, relevance, updated_at"
 )
 

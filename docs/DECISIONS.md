@@ -211,3 +211,29 @@ mismatches**, `distinct trust = {0.8}`, `flagged = []`.
 gently downranked. Deferred (still phase-1/2): "pay far above category median with zero
 skill requirement" needs a category-median corpus (and is really a score-side factor), and
 "months-long daily reposts" needs posting-history detection.
+
+## ADR-0015 — Employment type as a structured Gig field
+**Status**: accepted (2026-09-17)
+**Context**: listing engagement type was parsed but only flattened into prose — the
+OnlineJobs badge (`Gig` / `Part Time` / `Full Time` / `Any`) and the JSON sources'
+`jobType`/`job_types`/`job_type` values were written into `body` as `[Type: ...]`, leaving
+no structured, queryable value. ARCHITECTURE.md §2's canonical record had no employment
+field, so flows/scoring/serving could not use it, and the MVP's stated audience
+(gig/per-task work) could not be distinguished from full-time roles.
+**Decision**: add `employment_type` to `Gig` (+ `employment_type_raw` on `RawListing`)
+with canonical tokens `gig | internship | contract | part_time | full_time | unknown`
+(`models.EMPLOYMENT_*`). `normalize.employment_type(raw)` is a pure, order-sensitive
+mapper (narrower engagement wins when a raw value names several; no match → `unknown`,
+never guessed — iron rule 1). `enrich.enrich` sets the field from `raw.employment_type_raw`.
+Persisted as a new `gigs.employment_type TEXT` column; because `SCHEMA`'s `CREATE TABLE IF
+NOT EXISTS` cannot add a column to an existing table, `db._migrate(conn)` applies an
+idempotent `ALTER TABLE gigs ADD COLUMN employment_type TEXT` on every `connect()` (only
+SQLite's "duplicate column name" is tolerated; any other error propagates), and the column
+is threaded through `_gig_values`/INSERT/UPDATE/`_CARD_COLS`/`gig_from_row`. Surfaced in
+`render_listing`'s meta line and the gig-detail header.
+**Consequences**: employment type is now structured and displayed. Scope kept minimal —
+only `onlinejobs_ph` populates it (the badge); the JSON adapters keep their `[Type: ...]`
+body text and will be promoted to the field in a follow-up. **No scoring/flow change**
+(the ADR-0007 weights and flow definitions are untouched), which deliberately defers "use
+employment type to filter gig-style flows" to a later weights-entry. Body text is
+unchanged, so FTS behaviour is unchanged.
