@@ -53,3 +53,9 @@ Rules (see also `AGENTS.md` iron rules 3 & 5):
 
 Keep per-source: last_success_at, last_error, error_rate, listings_7d. Silent breakage is the
 #1 failure mode of aggregators — the health table is the early-warning system.
+
+Surfaced read-only at `GET /health` (JSON): per-source `last_success_at`, `age_hours`,
+`stale` (no success within `SOURCE_STALE_HOURS`, default 48h), `has_error`/`error_count`,
+`listings_7d`, and the scoring `reliability` (ADR-0014), plus `active_gigs`/`flagged_gigs`.
+Raw `last_error` text is intentionally **not** exposed — adapter error messages can embed
+key-bearing request URLs.

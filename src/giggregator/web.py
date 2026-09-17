@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from . import config, db, flows, ingest
-from .normalize import utcnow
+from .normalize import parse_dt, utcnow
 
 app = FastAPI(title="Giggregator")
 
@@ -284,6 +284,46 @@ def gig_detail(gig_id: int) -> str:
         f"<h3>Listing text</h3><p>{_esc(gig.body[:3000])}</p>"
     )
     return _PAGE.format(title=gig.title, body=body)
+
+
+@app.get("/health")
+def health() -> JSONResponse:
+    """Per-source freshness/health — the operator early-warning view (AGENTS.md: silent
+    breakage is the #1 failure mode). Public and read-only; a source is "stale" when it
+    has not succeeded within SOURCE_STALE_HOURS (or never). Raw last_error text is
+    deliberately omitted: adapter error strings can embed request URLs that carry API
+    keys (CareerJet/Jooble), so only has_error + error_count are surfaced; the message
+    stays in the DB for the operator.
+    """
+    conn = get_conn()
+    now = utcnow()
+    sources = []
+    for row in db.source_health(conn):
+        last = parse_dt(row["last_success_at"])
+        age_hours = (now - last).total_seconds() / 3600.0 if last else None
+        sources.append(
+            {
+                "id": row["id"],
+                "tier": row["tier"],
+                "cadence_hours": row["cadence_hours"],
+                "last_success_at": row["last_success_at"],
+                "age_hours": round(age_hours, 2) if age_hours is not None else None,
+                "stale": age_hours is None or age_hours > config.SOURCE_STALE_HOURS,
+                "has_error": bool(row["last_error"]),
+                "error_count": row["error_count"],
+                "listings_7d": row["listings_7d"],
+                "reliability": db.source_reliability(conn, row["id"]),
+            }
+        )
+    return JSONResponse(
+        {
+            "ok": all(not s["stale"] and not s["has_error"] for s in sources),
+            "active_gigs": db.active_count(conn),
+            "flagged_gigs": db.flagged_count(conn),
+            "stale_after_hours": config.SOURCE_STALE_HOURS,
+            "sources": sources,
+        }
+    )
 
 
 @app.api_route("/cron/ingest", methods=["GET", "POST"])

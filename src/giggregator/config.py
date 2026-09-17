@@ -52,6 +52,9 @@ PAYOUT_SCORE = {
 
 # --- trust ---
 SOURCE_RELIABILITY_DEFAULT = 0.8  # tier-1 sources until health data says otherwise
+# /health early-warning threshold: a source unseen for longer than this is reported
+# "stale". The cron runs daily (ADR-0013) -> ~24h cadence, so 48h allows one missed cycle.
+SOURCE_STALE_HOURS = 48.0
 
 # --- ingest politeness ---
 HTTP_USER_AGENT = "GiggregatorBot/0.1 (+https://github.com/giggregator; respectful crawler)"

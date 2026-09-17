@@ -275,6 +275,29 @@ def source_reliability(conn: sqlite3.Connection, source_id: str) -> float:
     return round(max(0.2, min(1.0, reliability)), 6)
 
 
+def source_health(conn: sqlite3.Connection) -> list[dict]:
+    """Per-source health rows for the /health early-warning view (AGENTS.md: silent
+    breakage is the #1 aggregator failure mode). Returns raw fields including last_error;
+    the caller decides what to expose (raw error text can embed key-bearing URLs).
+    """
+    rows = conn.execute(
+        "SELECT id, tier, cadence_hours, last_success_at, last_error, error_count, listings_7d"
+        " FROM sources ORDER BY id"
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "tier": r["tier"],
+            "cadence_hours": r["cadence_hours"],
+            "last_success_at": r["last_success_at"],
+            "last_error": r["last_error"],
+            "error_count": r["error_count"],
+            "listings_7d": r["listings_7d"],
+        }
+        for r in rows
+    ]
+
+
 def get_fx(conn: sqlite3.Connection, code: str = "USD") -> float | None:
     row = conn.execute("SELECT php_rate FROM fx_rates WHERE code = ?", (code,)).fetchone()
     return row["php_rate"] if row else None
