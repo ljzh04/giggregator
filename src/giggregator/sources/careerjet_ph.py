@@ -21,6 +21,7 @@ import base64
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -34,6 +35,7 @@ LOCALE = "en_PH"
 LOCATION = "Philippines"
 KEYWORDS = "remote"
 PAGE_SIZE = 50
+MAX_PAGES = 3  # politeness bound: page 1 + up to 2 more page requests
 
 SALARY_PERIOD = {"Y": "year", "M": "month", "W": "week", "D": "day", "H": "hour"}
 
@@ -78,23 +80,67 @@ def _safe_json(payload: str | bytes) -> dict:
         return {}
 
 
+def has_more_pages(data: dict, page: int) -> bool:
+    """Whether another page is worth requesting (pure; drives fetch()'s loop).
+
+    Stop when the response is not a JOBS payload, the page is short/empty (<
+    PAGE_SIZE), or we have reached the advertised last page (``pages``) / exhausted
+    ``hits``. Fixture-verified: page 1 of the real response reports ``pages: 166``.
+    """
+    if data.get("type") not in (None, "JOBS"):
+        return False
+    if len(data.get("jobs") or []) < PAGE_SIZE:
+        return False
+    pages = data.get("pages")
+    if isinstance(pages, int) and pages > 0:
+        return page < pages
+    hits = data.get("hits")
+    if isinstance(hits, int) and hits > 0:
+        return page * PAGE_SIZE < hits
+    return True
+
+
+def merge_payloads(payloads: list[dict]) -> dict:
+    """Fold per-page JOBS responses into one JOBS payload so parse() stays unchanged.
+
+    Non-JOBS (LOCATIONS disambiguation) responses are skipped; jobs are deduped by URL;
+    ``hits``/``pages`` keep the max seen across pages.
+    """
+    jobs: list[dict] = []
+    seen: set[str] = set()
+    hits = 0
+    pages = 0
+    for data in payloads:
+        if data.get("type") not in (None, "JOBS"):
+            continue
+        if isinstance(data.get("hits"), int):
+            hits = max(hits, data["hits"])
+        if isinstance(data.get("pages"), int):
+            pages = max(pages, data["pages"])
+        for job in data.get("jobs") or []:
+            url = job.get("url")
+            if isinstance(url, str):
+                if url in seen:
+                    continue
+                seen.add(url)
+            jobs.append(job)
+    return {"type": "JOBS", "hits": hits, "pages": pages, "jobs": jobs}
+
+
 class CareerjetPhAdapter(SourceAdapter):
     meta = SourceMeta(
         id="careerjet_ph", tier=1, cadence_hours=6, default_currency="PHP", default_period="monthly"
     )
     fetch_url = API_URL
 
-    def fetch(self) -> str | bytes:
-        if not config.CAREERJET_API_KEY:
-            print("[careerjet_ph] SKIP: no GIGGREGATOR_CAREERJET_KEY in env", file=sys.stderr)
-            return b'{"type": "JOBS", "hits": 0, "jobs": []}'
-        token = base64.b64encode(f"{config.CAREERJET_API_KEY}:".encode()).decode()
+    def _fetch_page(self, page: int, token: str) -> dict:
+        """One CareerJet query for ``page``, parsed to a dict (the network boundary)."""
         params = {
             "locale_code": LOCALE,
             "keywords": KEYWORDS,
             "location": LOCATION,
             "sort": "relevance",
-            "page": 1,
+            "page": page,
             "pagesize": PAGE_SIZE,
             "user_agent": config.HTTP_USER_AGENT,
         }
@@ -112,7 +158,27 @@ class CareerjetPhAdapter(SourceAdapter):
             follow_redirects=True,
         )
         response.raise_for_status()
-        return response.text
+        return _safe_json(response.text)
+
+    def fetch(self) -> str | bytes:
+        """Fetch up to MAX_PAGES pages and merge their jobs into one JOBS payload so
+        parse() stays unchanged. Rate-limited between requests; stops early via
+        has_more_pages(). An HTTP error propagates (surfaced in source health by the
+        caller's per-adapter isolation) — same semantics as the single-page fetch.
+        """
+        if not config.CAREERJET_API_KEY:
+            print("[careerjet_ph] SKIP: no GIGGREGATOR_CAREERJET_KEY in env", file=sys.stderr)
+            return b'{"type": "JOBS", "hits": 0, "jobs": []}'
+        token = base64.b64encode(f"{config.CAREERJET_API_KEY}:".encode()).decode()
+        payloads: list[dict] = []
+        for page in range(1, MAX_PAGES + 1):
+            data = self._fetch_page(page, token)
+            payloads.append(data)
+            if not has_more_pages(data, page):
+                break
+            if page < MAX_PAGES:
+                time.sleep(config.HTTP_PAGE_DELAY_SECONDS)
+        return json.dumps(merge_payloads(payloads))
 
     def parse(
         self, payload: str | bytes, fetched_at: datetime | None = None

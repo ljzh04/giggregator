@@ -7,11 +7,18 @@ caught offline (AGENTS.md: definition of done for adapters).
 
 from __future__ import annotations
 
+import json
+import re
+
 from conftest import FIXTURE_FILES, fixture_bytes, fixture_text
 from giggregator import models
 from giggregator.sources import ADAPTERS
 from giggregator.sources.arbeitnow import ArbeitnowAdapter
-from giggregator.sources.careerjet_ph import CareerjetPhAdapter
+from giggregator.sources.careerjet_ph import (
+    CareerjetPhAdapter,
+    has_more_pages,
+    merge_payloads,
+)
 from giggregator.sources.jobicy import JobicyAdapter
 from giggregator.sources.jooble_ph import JooblePhAdapter
 from giggregator.sources.onlinejobs_ph import OnlineJobsAdapter, next_page_url
@@ -196,8 +203,6 @@ def test_careerjet_skips_without_key_and_parses_structured_salary():
     import os
     from unittest import mock
 
-    from giggregator.sources.careerjet_ph import CareerjetPhAdapter
-
     with mock.patch.dict(os.environ, {}, clear=False):
         with mock.patch("giggregator.config.CAREERJET_API_KEY", ""):
             payload = CareerjetPhAdapter().fetch()
@@ -216,6 +221,91 @@ def test_careerjet_skips_without_key_and_parses_structured_salary():
     assert listing.pay_raw == "PHP 30000-40000 per month"
     # LOCATIONS-type responses carry no jobs
     assert CareerjetPhAdapter().parse(b'{"type": "LOCATIONS", "locations": []}') == []
+
+
+def test_careerjet_has_more_pages_uses_fixture_pages_metadata():
+    data = json.loads(fixture_bytes("careerjet_ph/careerjet_ph_20260916_01.json"))
+    assert data["pages"] == 166  # real pagination metadata from the capture
+    assert has_more_pages(data, 1) is True
+    assert has_more_pages(data, 166) is False  # reached the advertised last page
+
+
+def test_careerjet_has_more_pages_stops_on_short_empty_or_non_jobs():
+    assert (
+        has_more_pages({"type": "JOBS", "hits": 1, "pages": 5, "jobs": [{"url": "u"}]}, 1) is False
+    )
+    assert has_more_pages({"type": "JOBS", "hits": 0, "pages": 0, "jobs": []}, 1) is False
+    assert has_more_pages({"type": "LOCATIONS", "locations": []}, 1) is False
+    assert has_more_pages({}, 1) is False  # unparseable payload -> stop
+
+
+def test_careerjet_merge_payloads_dedupes_by_url_and_keeps_max_metadata():
+    p1 = {"type": "JOBS", "hits": 100, "pages": 2, "jobs": [{"url": "a"}, {"url": "b"}]}
+    p2 = {"type": "JOBS", "hits": 100, "pages": 2, "jobs": [{"url": "b"}, {"url": "c"}]}
+    merged = merge_payloads([p1, p2])
+    assert merged["type"] == "JOBS"
+    assert merged["hits"] == 100 and merged["pages"] == 2
+    assert [j["url"] for j in merged["jobs"]] == ["a", "b", "c"]  # "b" deduped
+
+
+def test_careerjet_merge_payloads_ignores_locations_response():
+    merged = merge_payloads([{"type": "LOCATIONS", "locations": []}])
+    assert merged == {"type": "JOBS", "hits": 0, "pages": 0, "jobs": []}
+
+
+def _cj_page(page, *, total_pages=166, hits=8280, count=50):
+    jobs = [
+        {
+            "title": f"Job {page}-{i}",
+            "company": "Acme",
+            "url": f"https://example.com/job/{page}/{i}",
+            "description": "desc",
+            "locations": "Philippines",
+            "date": "Mon, 15 Sep 2025 10:00:00 GMT",
+            "salary": "",
+        }
+        for i in range(count)
+    ]
+    return {"type": "JOBS", "hits": hits, "pages": total_pages, "jobs": jobs}
+
+
+def _stub_careerjet_http(monkeypatch, *, total_pages, hits, calls):
+    import giggregator.sources.careerjet_ph as cj
+
+    def fake_get(url, **kwargs):
+        page = int(re.search(r"page=(\d+)", url).group(1))
+        calls.append(page)
+
+        class _Resp:
+            text = json.dumps(_cj_page(page, total_pages=total_pages, hits=hits))
+
+            def raise_for_status(self):
+                pass
+
+        return _Resp()
+
+    monkeypatch.setattr(cj.config, "CAREERJET_API_KEY", "dummy")
+    monkeypatch.setattr(cj, "_server_ip", lambda: "203.0.113.9")
+    monkeypatch.setattr(cj.httpx, "get", fake_get)
+    monkeypatch.setattr(cj.config, "HTTP_PAGE_DELAY_SECONDS", 0.0)
+    return cj
+
+
+def test_careerjet_fetch_paginates_and_merges(monkeypatch):
+    calls: list[int] = []
+    cj = _stub_careerjet_http(monkeypatch, total_pages=166, hits=8280, calls=calls)
+    payload = cj.CareerjetPhAdapter().fetch()
+    assert calls == [1, 2, 3]  # bounded by MAX_PAGES
+    jobs = json.loads(payload)["jobs"]
+    assert len(jobs) == 3 * cj.PAGE_SIZE
+    assert len({j["url"] for j in jobs}) == len(jobs)  # distinct across merged pages
+
+
+def test_careerjet_fetch_stops_when_pages_exhausted(monkeypatch):
+    calls: list[int] = []
+    cj = _stub_careerjet_http(monkeypatch, total_pages=2, hits=100, calls=calls)
+    cj.CareerjetPhAdapter().fetch()
+    assert calls == [1, 2]  # page 2 of 2 -> no third request
 
 
 def test_bad_payload_does_not_explode():
