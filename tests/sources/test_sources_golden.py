@@ -7,14 +7,14 @@ caught offline (AGENTS.md: definition of done for adapters).
 
 from __future__ import annotations
 
-from conftest import FIXTURE_FILES, fixture_bytes
+from conftest import FIXTURE_FILES, fixture_bytes, fixture_text
 from giggregator import models
 from giggregator.sources import ADAPTERS
 from giggregator.sources.arbeitnow import ArbeitnowAdapter
 from giggregator.sources.careerjet_ph import CareerjetPhAdapter
 from giggregator.sources.jobicy import JobicyAdapter
 from giggregator.sources.jooble_ph import JooblePhAdapter
-from giggregator.sources.onlinejobs_ph import OnlineJobsAdapter
+from giggregator.sources.onlinejobs_ph import OnlineJobsAdapter, next_page_url
 from giggregator.sources.remotive import RemotiveAdapter
 
 ADAPTER_BY_ID = {a.meta.id: a for a in ADAPTERS}
@@ -86,6 +86,64 @@ def test_onlinejobs_pay_variety_preserved():
     pay_values = [listing.pay_raw for listing in listings if listing.pay_raw]
     assert any("/hour" in v or "/hr" in v for v in pay_values)
     assert any("$" in v for v in pay_values)
+
+
+def test_onlinejobs_next_page_url_from_fixture():
+    # real page-1 capture: li.active is page 1 -> link for page 2 (offset 30)
+    url = next_page_url(fixture_bytes("onlinejobs_ph/onlinejobs_ph_20260915_01.html"))
+    assert url == "https://www.onlinejobs.ph/jobseekers/jobsearch/30"
+
+
+def test_onlinejobs_next_page_none_without_pagination():
+    assert next_page_url(b"<html><body>no pager here</body></html>") is None
+
+
+def test_onlinejobs_next_page_none_on_last_page():
+    # active page 3 with no page-4 link -> None so the crawl stops
+    html = (
+        b'<ul class="pagination">'
+        b'<li class="page-item page-link"><a href="/jobseekers/jobsearch/30"'
+        b' data-ci-pagination-page="2">2</a></li>'
+        b'<li class="page-item active page-link"><a>3</a></li>'
+        b"</ul>"
+    )
+    assert next_page_url(html) is None
+
+
+def test_onlinejobs_parse_dedupes_across_concatenated_pages():
+    # fetch() joins page HTML blobs; duplicate cards must collapse to one listing
+    one = fixture_bytes("onlinejobs_ph/onlinejobs_ph_20260915_01.html")
+    single = OnlineJobsAdapter().parse(one)
+    combined = OnlineJobsAdapter().parse(one + b"\n" + one)
+    assert len(combined) == len(single) >= 10
+
+
+def test_onlinejobs_fetch_paginates_then_stops_at_last_page(monkeypatch):
+    # offline: stub httpx.get; page 1 (fixture) advertises page 2, page 2 has no next
+    import giggregator.sources.onlinejobs_ph as oj
+
+    page1 = fixture_text("onlinejobs_ph/onlinejobs_ph_20260915_01.html")
+    requested: list[str] = []
+    last_page = '<ul class="pagination"><li class="page-item active page-link"><a>9</a></li></ul>'
+
+    def fake_get(url, **kwargs):
+        requested.append(url)
+
+        class _Resp:
+            text = page1 if len(requested) == 1 else last_page
+
+            def raise_for_status(self):
+                pass
+
+        return _Resp()
+
+    monkeypatch.setattr(oj.httpx, "get", fake_get)
+    monkeypatch.setattr(oj.config, "HTTP_PAGE_DELAY_SECONDS", 0.0)
+    payload = oj.OnlineJobsAdapter().fetch()
+    assert requested[0] == oj.FETCH_URL
+    assert requested[1] == "https://www.onlinejobs.ph/jobseekers/jobsearch/30"
+    assert len(requested) == 2  # second page has no next link -> crawl stops
+    assert "jobpost-cat-box" in payload  # joined HTML still carries page-1 cards
 
 
 def test_jooble_golden():

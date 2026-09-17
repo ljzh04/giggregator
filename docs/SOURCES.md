@@ -35,7 +35,7 @@ Rules (see also `AGENTS.md` iron rules 3 & 5):
 
 | Source | Tier | What it gives us | Cadence | Status | Notes |
 |---|---|---|---|---|---|
-| onlinejobs_ph | 1 | PH home-based VA/support/remote, structured pay data | 2h | **MVP live-verified** | card-HTML parser; pay conventions in `pay_utils` + fixture MANIFEST |
+| onlinejobs_ph | 1 | PH home-based VA/support/remote, structured pay data | 2h | **MVP live-verified** | card-HTML parser; pay conventions in `pay_utils` + fixture MANIFEST; paginates up to `MAX_PAGES` (3) result pages/cycle |
 | remotive | 1 | Global remote JSON API, USD roles | 6h | **MVP live-verified** | use `/api/remote-jobs` (RSS is CF-challenged) |
 | jobicy | 1 | Global remote JSON API | 6h | **MVP live-verified** | structured salaryMin/Max/Currency/Period |
 | arbeitnow | 1 | Global remote JSON API (remote-only gate) | 12h | **MVP live-verified** | `published_at` often null → fallbacks |

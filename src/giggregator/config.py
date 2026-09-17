@@ -58,6 +58,8 @@ SOURCE_STALE_HOURS = 48.0
 
 # --- ingest politeness ---
 HTTP_USER_AGENT = "GiggregatorBot/0.1 (+https://github.com/giggregator; respectful crawler)"
+# Delay between pages of a multi-page adapter fetch (OnlineJobs paginates results).
+HTTP_PAGE_DELAY_SECONDS = 1.0
 HTTP_TIMEOUT_SECONDS = 30.0
 
 # --- publisher-API keys (CareerJet / Jooble) ---

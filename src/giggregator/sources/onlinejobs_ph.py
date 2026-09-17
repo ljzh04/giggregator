@@ -17,12 +17,14 @@ low-confidence pay toward the corpus median, so mis-guesses degrade gracefully.
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime
 from urllib.parse import urljoin
 
+import httpx
 from bs4 import BeautifulSoup
 
-from .. import models, normalize
+from .. import config, models, normalize
 from .base import SourceAdapter, SourceMeta
 
 FETCH_URL = "https://www.onlinejobs.ph/jobseekers/jobsearch"
@@ -31,10 +33,60 @@ BASE_URL = "https://www.onlinejobs.ph"
 _PAY_DD = re.compile(r"icon-round-dollar[\s\S]{0,220}?<dd[^>]*>([\s\S]{1,80}?)</dd>", re.I)
 _BADGE = re.compile(r"<span[^>]*class=\"badge[^\"]*\"[^>]*>([^<]{1,30})</span>")
 
+# Politeness bound: page 1 + up to 2 more (OnlineJobs shows ~30 cards per page).
+MAX_PAGES = 3
+
+
+def next_page_url(html_text: str | bytes) -> str | None:
+    """Absolute URL of the next results page, or None on the last page.
+
+    OnlineJobs paginates CodeIgniter-style: <ul class="pagination"> holds the current
+    page in li.active and later pages as <a href="/jobseekers/jobsearch/<offset>"
+    data-ci-pagination-page="N">. Read the active page number and return the link for
+    N+1. Pure function, so multi-page behaviour is fixture-testable offline.
+    """
+    soup = BeautifulSoup(html_text, "html.parser")
+    pager = soup.select_one("ul.pagination")
+    if pager is None:
+        return None
+    active = pager.select_one("li.active")
+    current = 1
+    if active is not None:
+        try:
+            current = int(normalize.clean(active.get_text()))
+        except ValueError:
+            current = 1
+    link = pager.select_one(f'a[data-ci-pagination-page="{current + 1}"]')
+    href = link.get("href") if link is not None else None
+    return urljoin(BASE_URL, href) if href else None
+
 
 class OnlineJobsAdapter(SourceAdapter):
     meta = SourceMeta(id="onlinejobs_ph", tier=1, cadence_hours=2)
     fetch_url = FETCH_URL
+
+    def fetch(self) -> str | bytes:
+        """Fetch up to MAX_PAGES result pages and concatenate their HTML so parse()
+        sees every card (parse dedupes by URL). Rate-limited between requests per the
+        adapter contract; stops early when next_page_url() reports the last page.
+        """
+        pages: list[str] = []
+        url: str | None = FETCH_URL
+        for page_index in range(MAX_PAGES):
+            if url is None:
+                break
+            response = httpx.get(
+                url,
+                headers={"User-Agent": config.HTTP_USER_AGENT},
+                timeout=config.HTTP_TIMEOUT_SECONDS,
+                follow_redirects=True,
+            )
+            response.raise_for_status()
+            pages.append(response.text)
+            url = next_page_url(response.text)
+            if url is not None and page_index < MAX_PAGES - 1:
+                time.sleep(config.HTTP_PAGE_DELAY_SECONDS)
+        return "\n".join(pages)
 
     def parse(
         self, payload: str | bytes, fetched_at: datetime | None = None
