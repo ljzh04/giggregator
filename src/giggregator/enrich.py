@@ -33,8 +33,12 @@ def enrich(raw: models.RawListing, *, fx: float = config.USD_PHP_FALLBACK) -> mo
     gig.no_experience_friendly = normalize.is_no_experience_friendly(text)
     gig.payout_cadence = normalize.payout_cadence(text, gig.pay.kind)
 
-    # hard scam signals -> flagged; excluded from index/serving downstream
-    gig.trust_flags = normalize.scam_flags(f"{gig.title} {gig.body} {raw.pay_raw or ''}")
+    # Scam signals: hard (fee_required) auto-excludes; soft (no_company) only downranks
+    # via score.trust_factor. company is passed so "no company + text-only contact" can
+    # be detected as a conjunction (AGENTS.md scam layer).
+    gig.trust_flags = normalize.scam_flags(
+        f"{gig.title} {gig.body} {raw.pay_raw or ''}", company=raw.company
+    )
     if "fee_required" in gig.trust_flags:
         gig.status = models.STATUS_FLAGGED
 

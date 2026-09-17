@@ -180,3 +180,34 @@ vs the 2–6h contract; GitHub Actions remains the upgrade path if faster cadenc
 is needed. Jooble quota held (~2 of 500 used); re-enable only for explicit
 one-shot refreshes. CareerJet-from-Vercel may 403 until the egress IP is
 whitelisted — per-adapter isolation contains it.
+
+## ADR-0014 — Trust-layer v1: scam soft-signals + source-health-driven reliability
+**Status**: accepted (2026-09-17)
+**Context**: MVP scoring passed a constant `source_reliability=0.8` into
+`score.trust_factor` for every gig (`rescore_all` never supplied a per-source value), so
+the "source health + re-verified credit" trust term from ARCHITECTURE.md §5 carried no
+signal. Separately, `normalize.scam_flags` only detected the hard pay-to-apply signal
+(`fee_required` → auto-exclude); the documented soft signal "no company name + text-only
+contact" was unenforced, so a scammer posting a bare email / Telegram handle with no
+employer name could rank on pay + freshness alone.
+**Decision**: (a) `scam_flags(text, *, company="")` gains a soft `no_company` flag when a
+direct personal-contact vector (bare email, t.me / wa.me / discord link, PH mobile,
+"call/text") is present *and* no real employer name is (empty/placeholder company);
+`enrich` passes `raw.company`. Soft flags only downrank via the existing `trust_factor`
+penalty (`-0.10` each) and never exclude; `fee_required` stays the only hard/excluding
+signal. (b) `db.source_reliability(conn, source_id)` maps `sources.error_count` and the
+staleness of `sources.last_success_at` to a 0..1 value (default 0.8, floor 0.2): −0.03 per
+recorded error, −0.10 if last success >30d, −0.30 if never succeeded or >90d.
+`ingest.rescore_all` passes it into `score_gig`, cached per source so the Turso/Hrana path
+does one lookup per source, not per listing. Weights are unchanged (ADR-0007:
+pay .30 / fresh .25 / effort .15 / match .20 / trust .10).
+**Fixture-corpus score diff**: **none.** All fixture sources seed a fresh `last_success_at`
+with `error_count=0`, so `source_reliability` returns exactly 0.8 == the prior constant,
+and no fixture listing trips `no_company`. Verified: scoring all 157 fixture gigs with the
+old constant vs the new health-driven value at the same `now` gives **0 factor/relevance
+mismatches**, `distinct trust = {0.8}`, `flagged = []`.
+**Consequences**: trust is now a live signal — degraded sources (accumulated errors, stale
+`last_success_at`) rank lower and "no employer name + only a personal contact" listings are
+gently downranked. Deferred (still phase-1/2): "pay far above category median with zero
+skill requirement" needs a category-median corpus (and is really a score-side factor), and
+"months-long daily reposts" needs posting-history detection.

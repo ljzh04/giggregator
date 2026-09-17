@@ -58,7 +58,10 @@ _PERIOD_PATTERNS: list[tuple[str, str]] = [
     (models.PAY_MONTHLY, r"(?:per|/|a|an)\s*month\b|\bmonthly\b|\bmonth\b"),
     (models.PAY_WEEKLY, r"(?:per|/|a|an)\s*week\b|\bweekly\b"),
     (models.PAY_DAILY, r"(?:per|/|a|an)\s*day\b|\bdaily\b"),
-    (models.PAY_PER_TASK, r"(?:per|/)\s*(?:gig|task|job|article|project|batch|piece|head|word|audio|video|post)\b"),
+    (
+        models.PAY_PER_TASK,
+        r"(?:per|/)\s*(?:gig|task|job|article|project|batch|piece|head|word|audio|video|post)\b",
+    ),
     (models.PAY_HOURLY, r"(?:per|/)\s*(?:hr|hour)s?\b|\b(?:hr|hour)s?/|\ban hour\b"),
 ]
 
@@ -136,7 +139,6 @@ def parse_pay(
     if len(values) >= 2 and re.search(
         r"\d[\d,]*\s*k?\s*(?:-|–|—|to)\s*(?:\$|₱|\b(?:usd|php|peso)s?\b)?\s*\d", low
     ):
-
         amount = (min(values) + max(values)) / 2.0
         confidence -= 0.10
     else:
@@ -163,12 +165,11 @@ _INTERNET_STABLE = re.compile(
     r"stable (?:internet|connection)|fast internet|\b\d+\s*mbps|reliable internet", re.I
 )
 _HOURS_FLEX = re.compile(
-    r"flexible|set your own (?:hours|schedule)|own time|anytime|choose your (?:hours|schedule)", re.I
+    r"flexible|set your own (?:hours|schedule)|own time|anytime|choose your (?:hours|schedule)",
+    re.I,
 )
 _HOURS_OWN = re.compile(r"set your own|own time|own hours|choose your", re.I)
-_HOURS_FIXED = re.compile(
-    r"\bshift\b|graveyard|night shift|day shift|\bus hours\b|rotating", re.I
-)
+_HOURS_FIXED = re.compile(r"\bshift\b|graveyard|night shift|day shift|\bus hours\b|rotating", re.I)
 _COMMS_LIVE = re.compile(
     r"video (?:call|interview)|webcam|on cam|camera|live interview|zoom|google meet", re.I
 )
@@ -205,41 +206,109 @@ def extract_requirements(text: str) -> models.Requirements:
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
     "customer_support": [
-        "customer service", "customer support", "chat support", "csr", "help desk",
-        "call center", "bpo", "support agent", "technical support",
+        "customer service",
+        "customer support",
+        "chat support",
+        "csr",
+        "help desk",
+        "call center",
+        "bpo",
+        "support agent",
+        "technical support",
     ],
     "va_admin": [
-        "virtual assistant", "personal assistant", "executive assistant", "admin assistant",
-        "administrative assistant", "appointment setting", "email management",
+        "virtual assistant",
+        "personal assistant",
+        "executive assistant",
+        "admin assistant",
+        "administrative assistant",
+        "appointment setting",
+        "email management",
     ],
     "data_entry": ["data entry", "encoding", "encoder", "typing", "encode"],
     "transcription": ["transcription", "transcriber", "captioning", "subtitle", "captions"],
     "ai_training": [
-        "ai training", "ai trainer", "data annotation", "annotat", "labeling", "labelling",
-        "rlhf", "content moderation", "llm", "ai model evaluation",
+        "ai training",
+        "ai trainer",
+        "data annotation",
+        "annotat",
+        "labeling",
+        "labelling",
+        "rlhf",
+        "content moderation",
+        "llm",
+        "ai model evaluation",
     ],
     "online_tutoring": ["tutor", "teach", "teacher", "teaching", "esl", "lesson", "english online"],
     "content_writing": [
-        "content writer", "writer", "writing", "copywriting", "blogger", "blog", "proofread",
-        "editor", "article",
+        "content writer",
+        "writer",
+        "writing",
+        "copywriting",
+        "blogger",
+        "blog",
+        "proofread",
+        "editor",
+        "article",
     ],
     "translation": ["translat", "interpreter"],
     "dev": [
-        "developer", "programmer", "software engineer", "full stack", "full-stack", "backend",
-        "frontend", "front-end", "web developer", "python", "javascript", "react", "laravel", "node",
+        "developer",
+        "programmer",
+        "software engineer",
+        "full stack",
+        "full-stack",
+        "backend",
+        "frontend",
+        "front-end",
+        "web developer",
+        "python",
+        "javascript",
+        "react",
+        "laravel",
+        "node",
     ],
     "design": [
-        "designer", "graphic design", "ui design", "ux", "figma", "canva", "photoshop",
-        "illustrator", "video editor", "video editing", "motion graphics",
+        "designer",
+        "graphic design",
+        "ui design",
+        "ux",
+        "figma",
+        "canva",
+        "photoshop",
+        "illustrator",
+        "video editor",
+        "video editing",
+        "motion graphics",
     ],
     "social_media": [
-        "social media", "smm", "tiktok", "instagram", "facebook ads", "community manager",
-        "seo specialist", "digital marketing", "content creator",
+        "social media",
+        "smm",
+        "tiktok",
+        "instagram",
+        "facebook ads",
+        "community manager",
+        "seo specialist",
+        "digital marketing",
+        "content creator",
     ],
     "qa_testing": ["qa", "tester", "test cases", "quality assurance", "manual testing", "bug"],
-    "microtasks": ["survey", "microtask", "micro task", "small task", "easy task", "raket", "sideline"],
+    "microtasks": [
+        "survey",
+        "microtask",
+        "micro task",
+        "small task",
+        "easy task",
+        "raket",
+        "sideline",
+    ],
     "sales_marketing": [
-        "sales", "lead generation", "telemarketing", "affiliate", "telesales", "cold call",
+        "sales",
+        "lead generation",
+        "telemarketing",
+        "affiliate",
+        "telesales",
+        "cold call",
         "marketing specialist",
     ],
 }
@@ -349,10 +418,44 @@ _FEE_REQUIRED = re.compile(
 )
 
 
-def scam_flags(text: str) -> list[str]:
-    """Hard signals -> auto-exclude. Soft signals (downrank) come in a later phase."""
+# Soft signals -> downrank (score.trust_factor). The classic "no company + text-only
+# contact" scammer shape from the scam layer: a personal contact vector with no employer
+# name behind it. Fires only when the company name is also withheld, so a named employer
+# advertising "email us at careers@co.com" is NOT penalized.
+_DIRECT_CONTACT = re.compile(
+    r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"  # bare email
+    r"|wa\.me/|whatsapp\.com/"
+    r"|t\.me/|tg://"
+    r"|discord\.gg/|discordapp\.com/"
+    r"|\b\+?63\s?9\d{9}\b"  # PH mobile
+    r"|call/text|call or text|sms me",
+    re.I,
+)
+# Company field placeholders that mean the employer name was withheld.
+_COMPANY_PLACEHOLDER = re.compile(
+    r"^(?:n/?a|tbd|to be discussed|anon(?:ymous)?|confidential|self[-\s]employed|freelancer)$",
+    re.I,
+)
+
+
+def _company_known(company: str) -> bool:
+    """True when the listing carries a real employer name (not withheld/placeholder)."""
+    c = clean(company)
+    return bool(c) and not _COMPANY_PLACEHOLDER.match(c)
+
+
+def scam_flags(text: str, *, company: str = "") -> list[str]:
+    """Hard signals -> auto-exclude; soft signals -> downrank (score.trust_factor).
+
+    Hard flags (fee_required) force status=flagged in enrich(); soft flags (no_company)
+    only downrank via trust_factor and never exclude on their own. ``company`` is needed
+    because "no company + text-only contact" is a conjunction, not merely the presence of
+    a contact vector.
+    """
     low = clean(text)
     flags: list[str] = []
     if _FEE_REQUIRED.search(low):
         flags.append("fee_required")
+    if _DIRECT_CONTACT.search(low) and not _company_known(company):
+        flags.append("no_company")
     return flags

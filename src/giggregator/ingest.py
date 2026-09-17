@@ -39,10 +39,25 @@ def ingest_adapter_payload(
 def rescore_all(conn, weights: dict[str, float] | None = None) -> int:
     now = utcnow()
     corpus = db.corpus_pay(conn)
+    # Source reliability is per-source, not per-gig: cache it so the Turso (Hrana)
+    # backend does one lookup per source instead of one per listing (ADR-0011).
+    reliability: dict[str, float] = {}
+
+    def source_reliability(source_id: str) -> float:
+        if source_id not in reliability:
+            reliability[source_id] = db.source_reliability(conn, source_id)
+        return reliability[source_id]
+
     count = 0
     for row in conn.execute("SELECT * FROM gigs WHERE status = 'active'").fetchall():
         gig = db.gig_from_row(row)
-        result = score.score_gig(gig, corpus, now, weights=weights)
+        result = score.score_gig(
+            gig,
+            corpus,
+            now,
+            source_reliability=source_reliability(gig.source_id),
+            weights=weights,
+        )
         db.save_scores(conn, int(row["id"]), result)
         count += 1
     return count
@@ -73,8 +88,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="giggregator.ingest")
     parser.add_argument("--once", action="store_true", help="run one ingest cycle (MVP default)")
     parser.add_argument("--db", default="giggregator.db", help="sqlite db path")
-    parser.add_argument("--only", default=None, choices=[a.meta.id for a in ADAPTERS],
-                        help="run a single adapter (e.g. home-IP CareerJet top-up to Turso)")
+    parser.add_argument(
+        "--only",
+        default=None,
+        choices=[a.meta.id for a in ADAPTERS],
+        help="run a single adapter (e.g. home-IP CareerJet top-up to Turso)",
+    )
     args = parser.parse_args()
     run(args.db, only=args.only)
 

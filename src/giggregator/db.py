@@ -248,6 +248,33 @@ def record_source_error(conn: sqlite3.Connection, source_id: str, error: str, at
     conn.commit()
 
 
+def source_reliability(conn: sqlite3.Connection, source_id: str) -> float:
+    """Map per-source health (error count + last_success_at staleness) to a 0..1 value
+    for score.trust_factor. Healthy and fresh -> SOURCE_RELIABILITY_DEFAULT (0.8);
+    degrades with accumulated errors and a missing/stale last_success_at. Known sources
+    never fall below 0.2 so a degraded-but-seen source still out-ranks an unknown one.
+    """
+    from .normalize import parse_dt, utcnow
+
+    row = conn.execute(
+        "SELECT error_count, last_success_at FROM sources WHERE id = ?", (source_id,)
+    ).fetchone()
+    if row is None:
+        return config.SOURCE_RELIABILITY_DEFAULT
+    reliability = config.SOURCE_RELIABILITY_DEFAULT
+    reliability -= 0.03 * (row["error_count"] or 0)
+    last = parse_dt(row["last_success_at"])
+    if last is None:
+        reliability -= 0.30  # never succeeded -> suspicious
+    else:
+        age_days = (utcnow() - last).total_seconds() / 86400
+        if age_days > 90:
+            reliability -= 0.30  # stale beyond the revival window
+        elif age_days > 30:
+            reliability -= 0.10
+    return round(max(0.2, min(1.0, reliability)), 6)
+
+
 def get_fx(conn: sqlite3.Connection, code: str = "USD") -> float | None:
     row = conn.execute("SELECT php_rate FROM fx_rates WHERE code = ?", (code,)).fetchone()
     return row["php_rate"] if row else None

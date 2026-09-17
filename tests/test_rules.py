@@ -19,8 +19,13 @@ def test_device_mobile_only():
 
 
 def test_fixed_shift_vs_flexible():
-    assert normalize.extract_requirements("night shift, US hours schedule").hours == models.HOURS_FIXED
-    assert normalize.extract_requirements("flexible hours, set your own schedule").hours == models.HOURS_FLEX
+    assert (
+        normalize.extract_requirements("night shift, US hours schedule").hours == models.HOURS_FIXED
+    )
+    assert (
+        normalize.extract_requirements("flexible hours, set your own schedule").hours
+        == models.HOURS_FLEX
+    )
 
 
 def test_min_hours_and_fulltime():
@@ -29,7 +34,10 @@ def test_min_hours_and_fulltime():
 
 
 def test_live_comms():
-    assert normalize.extract_requirements("must be comfortable on camera for video calls").comms == models.COMMS_LIVE
+    assert (
+        normalize.extract_requirements("must be comfortable on camera for video calls").comms
+        == models.COMMS_LIVE
+    )
     assert normalize.extract_requirements("async work, no calls needed").comms == models.COMMS_ASYNC
 
 
@@ -38,14 +46,18 @@ def test_categories():
     assert normalize.categorize("Online English Tutor for Korean students") == "online_tutoring"
     assert normalize.categorize("Senior Python Developer") == "dev"
     assert normalize.categorize("Virtual Assistant for busy CEO") == "va_admin"
-    assert normalize.categorize("AI training tasks", "data annotation and labeling") == "ai_training"
+    assert (
+        normalize.categorize("AI training tasks", "data annotation and labeling") == "ai_training"
+    )
     assert normalize.categorize("Graphic designer needed", "Canva and Photoshop") == "design"
     assert normalize.categorize("We need help with something") == "other"
 
 
 def test_title_beats_body():
     # 'editor' (content_writing) in body vs 'video editor' (design) in title
-    assert normalize.categorize("Video Editor", "we will review each editor application") == "design"
+    assert (
+        normalize.categorize("Video Editor", "we will review each editor application") == "design"
+    )
 
 
 def test_tags():
@@ -61,12 +73,39 @@ def test_no_experience():
 def test_payout_cadence():
     text = "paid daily via GCash"
     assert normalize.payout_cadence(text, models.PAY_HOURLY) == models.PAYOUT_INSTANT
-    assert normalize.payout_cadence("weekly payout every Friday", models.PAY_HOURLY) == models.PAYOUT_WEEKLY
-    assert normalize.payout_cadence("per project basis", models.PAY_PER_TASK) == models.PAYOUT_PER_TASK
-    assert normalize.payout_cadence("salary paid monthly", models.PAY_MONTHLY) == models.PAYOUT_MONTHLY
+    assert (
+        normalize.payout_cadence("weekly payout every Friday", models.PAY_HOURLY)
+        == models.PAYOUT_WEEKLY
+    )
+    assert (
+        normalize.payout_cadence("per project basis", models.PAY_PER_TASK) == models.PAYOUT_PER_TASK
+    )
+    assert (
+        normalize.payout_cadence("salary paid monthly", models.PAY_MONTHLY) == models.PAYOUT_MONTHLY
+    )
 
 
 def test_scam_fee_required_hard_signal():
     assert "fee_required" in normalize.scam_flags("Pay the training fee of ₱500 to start")
     assert "fee_required" in normalize.scam_flags("Registration fee required before applying")
     assert normalize.scam_flags("Great opportunity, apply now") == []
+
+
+def test_scam_no_company_soft_signal_needs_both_conditions():
+    # a real employer name -> a listed contact vector is fine (no false positive)
+    assert "no_company" not in normalize.scam_flags("Email careers@acme.com", company="Acme Corp")
+    assert normalize.scam_flags("WhatsApp wa.me/639171234567", company="Acme Corp") == []
+    # withheld company + direct contact -> soft flag
+    assert "no_company" in normalize.scam_flags("Email jobs@gmail.com", company="")
+    assert "no_company" in normalize.scam_flags("message me on Discord discord.gg/abc", company="")
+
+
+def test_scam_no_company_placeholder_counts_as_withheld():
+    assert "no_company" in normalize.scam_flags("DM t.me/recruiter", company="N/A")
+    assert "no_company" in normalize.scam_flags("telegram tg://join", company="Confidential")
+
+
+def test_scam_soft_signal_does_not_hard_exclude():
+    # soft flags downrank; only fee_required flips status in enrich()
+    flags = normalize.scam_flags("call/text 09171234567", company="")
+    assert "no_company" in flags and "fee_required" not in flags

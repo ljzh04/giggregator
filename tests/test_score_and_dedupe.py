@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
-from giggregator import db, dedupe, models, score
+from giggregator import db, dedupe, ingest, models, score
 from giggregator.normalize import utcnow
 
 
@@ -43,8 +44,9 @@ def test_effort_fast_payout_beats_slow():
 def test_effort_commitment_penalty():
     committed = models.Requirements(hours=models.HOURS_FIXED, min_hours_per_week=40)
     flex = models.Requirements(hours=models.HOURS_FLEX)
-    assert score.effort_factor(models.PAYOUT_MONTHLY, flex, True) > \
-        score.effort_factor(models.PAYOUT_MONTHLY, committed, False)
+    assert score.effort_factor(models.PAYOUT_MONTHLY, flex, True) > score.effort_factor(
+        models.PAYOUT_MONTHLY, committed, False
+    )
 
 
 def test_trust_soft_flags_penalize_but_hard_excluded_upstream():
@@ -62,23 +64,34 @@ def test_relevance_weighted_sum():
 
 def _gig(title, company, posted_at, body="apply now", hourly=250.0, source_id="remotive"):
     return models.Gig(
-        source_id=source_id, url=f"https://example.com/{title.replace(' ', '-')}",
-        title=title, body=body, company=company, posted_at=posted_at,
-        first_seen_at=posted_at, last_verified_at=posted_at,
+        source_id=source_id,
+        url=f"https://example.com/{title.replace(' ', '-')}",
+        title=title,
+        body=body,
+        company=company,
+        posted_at=posted_at,
+        first_seen_at=posted_at,
+        last_verified_at=posted_at,
     )
 
 
 def test_dedupe_key_order_insensitive():
-    assert dedupe.dedupe_key("ACME Corp", "Senior Python Developer") == \
-        dedupe.dedupe_key("acme CORP", "Developer Senior Python")
+    assert dedupe.dedupe_key("ACME Corp", "Senior Python Developer") == dedupe.dedupe_key(
+        "acme CORP", "Developer Senior Python"
+    )
 
 
 def test_db_merge_dedupes_cross_source():
     conn = db.connect(":memory:")
     now = utcnow()
     g1 = _gig("Support Agent", "Acme", now)
-    g2 = _gig("Support Agent", "acme", now - timedelta(days=1),
-              body="longer body " * 5, source_id="jobicy")
+    g2 = _gig(
+        "Support Agent",
+        "acme",
+        now - timedelta(days=1),
+        body="longer body " * 5,
+        source_id="jobicy",
+    )
     g1.dedupe_key = dedupe.dedupe_key(g1.company, g1.title)
     g2.dedupe_key = g1.dedupe_key
     id1 = db.upsert_gig(conn, g1)
@@ -102,8 +115,9 @@ def test_db_merge_tie_break_prefers_newer_extraction():
     g2.dedupe_key = g1.dedupe_key
     g2.pay.hourly_equiv_php, g2.pay.confidence = 300.0, 0.4
     db.upsert_gig(conn, g2)
-    row = conn.execute("SELECT pay_hourly_php FROM gigs WHERE dedupe_key = ?",
-                       (g1.dedupe_key,)).fetchone()
+    row = conn.execute(
+        "SELECT pay_hourly_php FROM gigs WHERE dedupe_key = ?", (g1.dedupe_key,)
+    ).fetchone()
     assert row["pay_hourly_php"] == 300.0
 
 
@@ -136,8 +150,7 @@ def test_expire_absolute_cap_despite_recent_verify():
     old = _expiry_gig("Ancient Role", "Acme", now - timedelta(days=91), now - timedelta(days=1))
     db.upsert_gig(conn, old)
     assert db.expire_stale_gigs(conn) == 1
-    row = conn.execute("SELECT status FROM gigs WHERE dedupe_key = ?",
-                       (old.dedupe_key,)).fetchone()
+    row = conn.execute("SELECT status FROM gigs WHERE dedupe_key = ?", (old.dedupe_key,)).fetchone()
     assert row["status"] == models.STATUS_EXPIRED
 
 
@@ -145,12 +158,18 @@ def test_expire_leaves_flagged_alone():
     """Scam-flagged gigs are excluded already; expiry must not touch them."""
     conn = db.connect(":memory:")
     now = utcnow()
-    flagged = _expiry_gig("Fee Job", "Scam Co", now - timedelta(days=60),
-                          now - timedelta(days=60), status=models.STATUS_FLAGGED)
+    flagged = _expiry_gig(
+        "Fee Job",
+        "Scam Co",
+        now - timedelta(days=60),
+        now - timedelta(days=60),
+        status=models.STATUS_FLAGGED,
+    )
     db.upsert_gig(conn, flagged)
     assert db.expire_stale_gigs(conn) == 0
-    row = conn.execute("SELECT status FROM gigs WHERE dedupe_key = ?",
-                       (flagged.dedupe_key,)).fetchone()
+    row = conn.execute(
+        "SELECT status FROM gigs WHERE dedupe_key = ?", (flagged.dedupe_key,)
+    ).fetchone()
     assert row["status"] == models.STATUS_FLAGGED
 
 
@@ -163,8 +182,9 @@ def test_upsert_revives_expired_gig():
     assert db.expire_stale_gigs(conn) == 1
     seen_again = _expiry_gig("Comeback Role", "Acme", now, now)
     db.upsert_gig(conn, seen_again)
-    row = conn.execute("SELECT status, last_verified_at FROM gigs WHERE dedupe_key = ?",
-                       (g.dedupe_key,)).fetchone()
+    row = conn.execute(
+        "SELECT status, last_verified_at FROM gigs WHERE dedupe_key = ?", (g.dedupe_key,)
+    ).fetchone()
     assert row["status"] == models.STATUS_ACTIVE
     assert row["last_verified_at"] == now.isoformat()
 
@@ -177,8 +197,7 @@ def test_upsert_flag_override_wins():
     db.upsert_gig(conn, g)
     flagged = _expiry_gig("Shady Role", "Acme", now, now, status=models.STATUS_FLAGGED)
     db.upsert_gig(conn, flagged)
-    row = conn.execute("SELECT status FROM gigs WHERE dedupe_key = ?",
-                       (g.dedupe_key,)).fetchone()
+    row = conn.execute("SELECT status FROM gigs WHERE dedupe_key = ?", (g.dedupe_key,)).fetchone()
     assert row["status"] == models.STATUS_FLAGGED
 
 
@@ -215,3 +234,54 @@ def test_match_query_empty_query_returns_baseline():
     g = _match_gig("Anything")
     assert score.match_query("", g) == 0.5
     assert score.match_query("   ", g) == 0.5
+
+
+def test_source_reliability_degrades_with_errors_and_staleness():
+    # Health -> reliability (ADR-0014): errors and staleness lower the value instead of
+    # every source being a flat SOURCE_RELIABILITY_DEFAULT.
+    now = utcnow()
+    conn = db.connect(":memory:")
+    db.upsert_source(conn, "healthy", 1, 6)
+    db.record_source_success(conn, "healthy", now.isoformat(), 10)
+    db.upsert_source(conn, "sick", 1, 6)
+    db.record_source_error(conn, "sick", "boom", now.isoformat())
+    db.record_source_error(conn, "sick", "boom", now.isoformat())
+    assert db.source_reliability(conn, "healthy") > db.source_reliability(conn, "sick")
+
+    db.upsert_source(conn, "ghost", 1, 6)
+    conn.execute(
+        "UPDATE sources SET last_success_at = ? WHERE id = ?",
+        ((now - timedelta(days=100)).isoformat(), "ghost"),
+    )
+    conn.commit()
+    assert db.source_reliability(conn, "ghost") < db.source_reliability(conn, "healthy")
+    # unknown source (no health row) -> neutral default, never a crash
+    assert db.source_reliability(conn, "never_seen") == 0.8
+
+
+def test_rescore_wires_source_reliability_into_trust():
+    # end-to-end of ADR-0014: after rescore_all, a degraded source's gigs carry a lower
+    # trust factor than a healthy source's (trust is no longer a constant 0.8).
+    now = utcnow()
+    conn = db.connect(":memory:")
+    for sid, title in (("good_src", "Accountant"), ("bad_src", "Bookkeeper")):
+        db.upsert_source(conn, sid, 1, 6)
+        g = _gig(title, "Acme", now, source_id=sid)
+        g.dedupe_key = dedupe.dedupe_key(g.company, g.title)
+        db.upsert_gig(conn, g)
+    db.record_source_success(conn, "good_src", now.isoformat(), 1)
+    for _ in range(6):
+        db.record_source_error(conn, "bad_src", "boom", now.isoformat())
+    conn.execute(
+        "UPDATE sources SET last_success_at = ? WHERE id = ?",
+        ((now - timedelta(days=100)).isoformat(), "bad_src"),
+    )
+    conn.commit()
+
+    ingest.rescore_all(conn)
+    trust = {
+        r["source_ids"]: json.loads(r["factors_json"])["factors"]["trust"]
+        for r in conn.execute("SELECT source_ids, factors_json FROM gigs").fetchall()
+    }
+    assert trust['["good_src"]'] == 0.8
+    assert trust['["bad_src"]'] < trust['["good_src"]']
