@@ -36,33 +36,41 @@ def _safe_json(payload: str | bytes) -> dict:
 
 
 class JooblePhAdapter(SourceAdapter):
-    meta = SourceMeta(id="jooble_ph", tier=1, cadence_hours=24,
-                      default_currency="PHP", default_period="monthly")
+    meta = SourceMeta(
+        id="jooble_ph", tier=1, cadence_hours=24, default_currency="PHP", default_period="monthly"
+    )
     fetch_url = API_URL.format(key="{key}")
 
     def fetch(self) -> str | bytes:
         if not config.JOOBLE_ENABLED:
-            print("[jooble_ph] SKIP: deferred (set GIGGREGATOR_JOOBLE_ENABLED=1 to re-enable)",
-                  file=sys.stderr)
+            print(
+                "[jooble_ph] SKIP: deferred (set GIGGREGATOR_JOOBLE_ENABLED=1 to re-enable)",
+                file=sys.stderr,
+            )
             return b'{"totalCount": 0, "jobs": []}'
         if not config.JOOBLE_API_KEY:
             print("[jooble_ph] SKIP: no GIGGREGATOR_JOOBLE_KEY in env", file=sys.stderr)
             return b'{"totalCount": 0, "jobs": []}'
         # One small page per cycle: the free key allows 500 lifetime requests.
-        body = {"keywords": KEYWORDS, "location": LOCATION,
-                "resultOnPage": RESULT_ON_PAGE, "page": 1}
+        body = {
+            "keywords": KEYWORDS,
+            "location": LOCATION,
+            "resultOnPage": RESULT_ON_PAGE,
+            "page": 1,
+        }
         response = httpx.post(
             API_URL.format(key=config.JOOBLE_API_KEY),
             json=body,
-            headers={"Content-Type": "application/json",
-                     "User-Agent": config.HTTP_USER_AGENT},
+            headers={"Content-Type": "application/json", "User-Agent": config.HTTP_USER_AGENT},
             timeout=config.HTTP_TIMEOUT_SECONDS,
             follow_redirects=True,
         )
         response.raise_for_status()
         return response.text
 
-    def parse(self, payload: str | bytes, fetched_at: datetime | None = None) -> list[models.RawListing]:
+    def parse(
+        self, payload: str | bytes, fetched_at: datetime | None = None
+    ) -> list[models.RawListing]:
         now = fetched_at or self.now()
         data = _safe_json(payload)
         listings: list[models.RawListing] = []

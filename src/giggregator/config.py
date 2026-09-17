@@ -72,4 +72,6 @@ JOOBLE_ENABLED = os.environ.get("GIGGREGATOR_JOOBLE_ENABLED", "0") == "1"
 
 # Vercel cron shared secret: the /cron/ingest route requires
 # Authorization: Bearer <CRON_SECRET>. Empty = route disabled (404).
-CRON_SECRET = os.environ.get("GIGGREGATOR_CRON_SECRET", "") or os.environ.get("CRON_SECRET", "")  # Vercel convention fallback
+CRON_SECRET = os.environ.get("GIGGREGATOR_CRON_SECRET", "") or os.environ.get(
+    "CRON_SECRET", ""
+)  # Vercel convention fallback

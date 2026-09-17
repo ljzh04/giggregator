@@ -58,13 +58,12 @@ def test_cron_auth_and_cycle(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CRON_SECRET", "test-secret")
     client = TestClient(web.app)
     assert client.get("/cron/ingest").status_code == 401
-    assert client.get("/cron/ingest",
-                      headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.get("/cron/ingest", headers={"Authorization": "Bearer wrong"}).status_code == 401
     # stub network: serve each adapter its committed fixture
     for adapter in ingest.ADAPTERS:
         folder, filename = FIXTURE_FILES[adapter.meta.id]
         data = fixture_bytes(f"{folder}/{filename}")
-        adapter.fetch = (lambda d: (lambda: d))(data)
+        adapter.fetch = (lambda d: lambda: d)(data)
     try:
         resp = client.get("/cron/ingest", headers={"Authorization": "Bearer test-secret"})
     finally:

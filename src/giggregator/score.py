@@ -99,7 +99,6 @@ def match_query(query: str, gig: models.Gig) -> float:
     return round(min(1.0, total / (2.0 * len(qtokens))), 6)
 
 
-
 def relevance(factors: dict[str, float], weights: dict[str, float] | None = None) -> float:
     weights = weights or config.WEIGHTS
     total_weight = sum(weights.values())

@@ -57,7 +57,9 @@ def _onlinejobs_defaults(pay_raw: str) -> tuple[str | None, str | None]:
     return currency, period
 
 
-def pay_from_listing(raw: models.RawListing, *, fx: float = config.USD_PHP_FALLBACK) -> models.PayInfo:
+def pay_from_listing(
+    raw: models.RawListing, *, fx: float = config.USD_PHP_FALLBACK
+) -> models.PayInfo:
     default_currency = None
     default_period = None
     pay_raw = raw.pay_raw

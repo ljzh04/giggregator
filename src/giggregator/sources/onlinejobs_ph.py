@@ -36,7 +36,9 @@ class OnlineJobsAdapter(SourceAdapter):
     meta = SourceMeta(id="onlinejobs_ph", tier=1, cadence_hours=2)
     fetch_url = FETCH_URL
 
-    def parse(self, payload: str | bytes, fetched_at: datetime | None = None) -> list[models.RawListing]:
+    def parse(
+        self, payload: str | bytes, fetched_at: datetime | None = None
+    ) -> list[models.RawListing]:
         now = fetched_at or self.now()
         soup = BeautifulSoup(payload, "html.parser")
         listings: list[models.RawListing] = []
@@ -72,9 +74,12 @@ class OnlineJobsAdapter(SourceAdapter):
             if pay_raw and not re.search(r"[$₱]|usd|php|peso", pay_raw, re.I):
                 first_number = re.search(r"\d[\d,.]*", pay_raw)
                 if first_number:
-                    marker = "$" if len(first_number.group()) <= 5 and float(
-                        first_number.group().rstrip(".,").replace(",", "") or 0
-                    ) < 20 else "PHP "
+                    marker = (
+                        "$"
+                        if len(first_number.group()) <= 5
+                        and float(first_number.group().rstrip(".,").replace(",", "") or 0) < 20
+                        else "PHP "
+                    )
                     pay_raw = f"{marker}{pay_raw}"
 
             posted = None

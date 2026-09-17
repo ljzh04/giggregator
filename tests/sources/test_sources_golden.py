@@ -27,7 +27,9 @@ def _parse(adapter_id):
 
 
 def test_registry_has_fixture_sources():
-    assert {"onlinejobs_ph", "remotive", "jobicy", "arbeitnow", "jooble_ph", "careerjet_ph"} <= set(ADAPTER_BY_ID)
+    assert {"onlinejobs_ph", "remotive", "jobicy", "arbeitnow", "jooble_ph", "careerjet_ph"} <= set(
+        ADAPTER_BY_ID
+    )
 
 
 def test_remotive_golden():
@@ -61,6 +63,7 @@ def test_arbeitnow_golden_remote_only():
     assert all("[Type:" in listing.body or True for listing in listings)
     raw_payload = fixture_bytes(f"arbeitnow/{FIXTURE_FILES['arbeitnow'][1]}")
     import json
+
     data = json.loads(raw_payload)["data"]
     remote_total = sum(1 for j in data if j.get("remote"))
     assert len(listings) == remote_total

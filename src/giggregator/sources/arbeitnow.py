@@ -23,11 +23,14 @@ def _safe_json(payload: str | bytes) -> dict:
 
 
 class ArbeitnowAdapter(SourceAdapter):
-    meta = SourceMeta(id="arbeitnow", tier=1, cadence_hours=12, default_currency="USD",
-                      default_period="yearly")
+    meta = SourceMeta(
+        id="arbeitnow", tier=1, cadence_hours=12, default_currency="USD", default_period="yearly"
+    )
     fetch_url = FETCH_URL
 
-    def parse(self, payload: str | bytes, fetched_at: datetime | None = None) -> list[models.RawListing]:
+    def parse(
+        self, payload: str | bytes, fetched_at: datetime | None = None
+    ) -> list[models.RawListing]:
         now = fetched_at or self.now()
         data = _safe_json(payload)
         listings: list[models.RawListing] = []

@@ -79,8 +79,9 @@ def _safe_json(payload: str | bytes) -> dict:
 
 
 class CareerjetPhAdapter(SourceAdapter):
-    meta = SourceMeta(id="careerjet_ph", tier=1, cadence_hours=6,
-                      default_currency="PHP", default_period="monthly")
+    meta = SourceMeta(
+        id="careerjet_ph", tier=1, cadence_hours=6, default_currency="PHP", default_period="monthly"
+    )
     fetch_url = API_URL
 
     def fetch(self) -> str | bytes:
@@ -113,7 +114,9 @@ class CareerjetPhAdapter(SourceAdapter):
         response.raise_for_status()
         return response.text
 
-    def parse(self, payload: str | bytes, fetched_at: datetime | None = None) -> list[models.RawListing]:
+    def parse(
+        self, payload: str | bytes, fetched_at: datetime | None = None
+    ) -> list[models.RawListing]:
         now = fetched_at or self.now()
         data = _safe_json(payload)
         if data.get("type") == "LOCATIONS":

@@ -41,7 +41,9 @@ class SourceAdapter(ABC):
         return response.text
 
     @abstractmethod
-    def parse(self, payload: str | bytes, fetched_at: datetime | None = None) -> list[models.RawListing]:
+    def parse(
+        self, payload: str | bytes, fetched_at: datetime | None = None
+    ) -> list[models.RawListing]:
         """Pure: payload (already fetched) -> RawListings. Golden tests run this."""
 
     def now(self) -> datetime:

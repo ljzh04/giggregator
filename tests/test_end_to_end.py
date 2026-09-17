@@ -77,7 +77,7 @@ def test_search_reranks_by_query_fit(seeded_db, monkeypatch):
     html = page.text
     title_hits = [i for i in range(len(html)) if html.startswith("/gig/", i)]
     assert title_hits, "expected gig links on the search page"
-    first_link = html[title_hits[0]:title_hits[0] + 40]
+    first_link = html[title_hits[0] : title_hits[0] + 40]
     first_id = int(first_link.split("/gig/")[1].split('"')[0].split("'")[0].split("<")[0])
     conn = db.connect(seeded_db)
     first = db.get_gig(conn, first_id)
@@ -130,7 +130,7 @@ def test_run_only_single_adapter(tmp_path):
     adapter = ADAPTER_BY_ID["careerjet_ph"]
     folder, filename = FIXTURE_FILES["careerjet_ph"]
     data = fixture_bytes(f"{folder}/{filename}")
-    adapter.fetch = (lambda: data)
+    adapter.fetch = lambda: data
     try:
         stored = ingest.run(path, only="careerjet_ph")
     finally:

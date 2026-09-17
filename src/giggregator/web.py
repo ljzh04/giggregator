@@ -26,8 +26,7 @@ _CONN_KEY = None
 
 def _is_remote() -> bool:
     return bool(
-        os.environ.get("GIGGREGATOR_TURSO_DATABASE_URL")
-        or os.environ.get("TURSO_DATABASE_URL")
+        os.environ.get("GIGGREGATOR_TURSO_DATABASE_URL") or os.environ.get("TURSO_DATABASE_URL")
     )
 
 
@@ -59,12 +58,14 @@ th{background:#f5f5f5}
 .meta{color:#666;font-size:.85em}
 """
 
-_PAGE = ("<!doctype html><html><head><meta charset='utf-8'>"
-         "<title>{title} — Giggregator</title><style>"
-         + _CSS.replace("{", "{{").replace("}", "}}")  # keep CSS literal through .format
-         + "</style></head>"
-         "<body><h1>Giggregator</h1><p class='meta'>PH remote-work search — device +"
-         " internet is the only ticket.</p>{body}</body></html>")
+_PAGE = (
+    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<title>{title} — Giggregator</title><style>"
+    + _CSS.replace("{", "{{").replace("}", "}}")  # keep CSS literal through .format
+    + "</style></head>"
+    "<body><h1>Giggregator</h1><p class='meta'>PH remote-work search — device +"
+    " internet is the only ticket.</p>{body}</body></html>"
+)
 
 
 def _esc(text: str | None) -> str:
@@ -130,8 +131,9 @@ def render_listing(gig, rank: int | None = None) -> str:
 
 def _table(gigs, ranked: bool = False) -> str:
     head = "<tr><th>Gig</th><th>Pay</th><th>Effort</th><th>Tags</th><th>Score</th></tr>"
-    rows = "".join(render_listing(g, rank=i + 1) if ranked else render_listing(g)
-                   for i, g in enumerate(gigs))
+    rows = "".join(
+        render_listing(g, rank=i + 1) if ranked else render_listing(g) for i, g in enumerate(gigs)
+    )
     if not rows:
         rows = "<tr><td colspan='5'><i>No listings. Run an ingest cycle first.</i></td></tr>"
     return f"<table>{head}{rows}</table>"
@@ -148,8 +150,10 @@ def _flow_nav(active_id: str | None = None) -> str:
 
 def _flow_header(flow) -> str:
     weights = ", ".join(f"{k}={v}" for k, v in flows.flow_weights(flow).items())
-    return (f"<h2>{_esc(flow.label)}</h2>"
-            f"<p class='meta'>{_esc(flow.description)} · weights: {weights}</p>")
+    return (
+        f"<h2>{_esc(flow.label)}</h2>"
+        f"<p class='meta'>{_esc(flow.description)} · weights: {weights}</p>"
+    )
 
 
 def _flow_gigs(conn, flow, limit: int = 40):
@@ -167,15 +171,19 @@ def _flow_gigs(conn, flow, limit: int = 40):
 
 # ---------------------------------------------------------------- routes
 
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     conn = get_conn()
     total = db.active_count(conn)
     top = db.active_gig_cards(conn, limit=40)
     flagged = db.flagged_count(conn)
-    body = (_flow_nav() + _table(top, ranked=True)
-            + f"<p class='meta'>Top {len(top)} of {total} active listings."
-              f" Flagged (scam-signal) listings excluded: {flagged}.</p>")
+    body = (
+        _flow_nav()
+        + _table(top, ranked=True)
+        + f"<p class='meta'>Top {len(top)} of {total} active listings."
+        f" Flagged (scam-signal) listings excluded: {flagged}.</p>"
+    )
     return _PAGE.format(title="Home", body=body)
 
 
@@ -191,8 +199,9 @@ def flow_page(flow_id: str) -> str:
 
 
 @app.get("/search", response_class=HTMLResponse)
-def search(q: str = "", category: str = "", device: str = "", hours: str = "",
-           min_pay: float = 0.0) -> str:
+def search(
+    q: str = "", category: str = "", device: str = "", hours: str = "", min_pay: float = 0.0
+) -> str:
     conn = get_conn()
     ids = db.search_gig_ids(conn, q)
     gigs = db.get_gig_cards(conn, ids)
@@ -214,19 +223,31 @@ def search(q: str = "", category: str = "", device: str = "", hours: str = "",
         gigs.sort(key=lambda g: g.scores.get("relevance", 0), reverse=True)
     active_filters = " ".join(
         f"<span class='badge'>{_esc(k)}={_esc(v)}</span>"
-        for k, v in [("q", q), ("category", category), ("device", device),
-                     ("hours", hours), ("min_pay", min_pay or "")] if v not in ("", None)
+        for k, v in [
+            ("q", q),
+            ("category", category),
+            ("device", device),
+            ("hours", hours),
+            ("min_pay", min_pay or ""),
+        ]
+        if v not in ("", None)
     )
-    form = ("<form action='/search' method='get'>"
-            "<input name='q' value='" + _esc(q) + "' placeholder='keywords'> "
-            "<input name='category' value='" + _esc(category) + "' placeholder='category'> "
-            "<input name='device' value='" + _esc(device) + "' placeholder='device'> "
-            "<input name='hours' value='" + _esc(hours) + "' placeholder='hours'> "
-            "<input name='min_pay' value='" + _esc(min_pay or "") + "' size='6'"
-            " placeholder='min ₱/hr'> <button>Go</button></form>")
-    body = (_flow_nav() + f"<h2>Search {active_filters}</h2>" + form
-            + _table(gigs[:40], ranked=True)
-            + f"<p class='meta'>{len(gigs)} matches.</p>")
+    form = (
+        "<form action='/search' method='get'>"
+        "<input name='q' value='" + _esc(q) + "' placeholder='keywords'> "
+        "<input name='category' value='" + _esc(category) + "' placeholder='category'> "
+        "<input name='device' value='" + _esc(device) + "' placeholder='device'> "
+        "<input name='hours' value='" + _esc(hours) + "' placeholder='hours'> "
+        "<input name='min_pay' value='" + _esc(min_pay or "") + "' size='6'"
+        " placeholder='min ₱/hr'> <button>Go</button></form>"
+    )
+    body = (
+        _flow_nav()
+        + f"<h2>Search {active_filters}</h2>"
+        + form
+        + _table(gigs[:40], ranked=True)
+        + f"<p class='meta'>{len(gigs)} matches.</p>"
+    )
     return _PAGE.format(title="Search", body=body)
 
 
@@ -294,5 +315,12 @@ def cron_ingest(request: Request) -> JSONResponse:
             per_source[adapter.meta.id] = {"error": str(exc)}
     rescored = ingest.rescore_all(conn)
     flagged = db.flagged_count(conn)
-    return JSONResponse({"ok": True, "stored": stored, "rescored": rescored,
-                         "flagged": flagged, "sources": per_source})
+    return JSONResponse(
+        {
+            "ok": True,
+            "stored": stored,
+            "rescored": rescored,
+            "flagged": flagged,
+            "sources": per_source,
+        }
+    )

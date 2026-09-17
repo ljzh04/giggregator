@@ -18,8 +18,13 @@ FETCH_URL = "https://jobicy.com/api/v2/remote-jobs?count=50"
 def _salary_raw(job: dict) -> str | None:
     low, high = job.get("salaryMin"), job.get("salaryMax")
     currency = job.get("salaryCurrency") or "USD"
-    period = {"yearly": "year", "monthly": "month", "weekly": "week",
-              "hourly": "hour", "daily": "day"}.get(job.get("salaryPeriod") or "", "year")
+    period = {
+        "yearly": "year",
+        "monthly": "month",
+        "weekly": "week",
+        "hourly": "hour",
+        "daily": "day",
+    }.get(job.get("salaryPeriod") or "", "year")
     if not low and not high:
         return None
     if low and high:
@@ -35,11 +40,14 @@ def _safe_json(payload: str | bytes) -> dict:
 
 
 class JobicyAdapter(SourceAdapter):
-    meta = SourceMeta(id="jobicy", tier=1, cadence_hours=6, default_currency="USD",
-                      default_period="yearly")
+    meta = SourceMeta(
+        id="jobicy", tier=1, cadence_hours=6, default_currency="USD", default_period="yearly"
+    )
     fetch_url = FETCH_URL
 
-    def parse(self, payload: str | bytes, fetched_at: datetime | None = None) -> list[models.RawListing]:
+    def parse(
+        self, payload: str | bytes, fetched_at: datetime | None = None
+    ) -> list[models.RawListing]:
         now = fetched_at or self.now()
         data = _safe_json(payload)
         listings: list[models.RawListing] = []

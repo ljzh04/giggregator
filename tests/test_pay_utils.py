@@ -10,8 +10,11 @@ FX = 58.0
 
 def _oj(pay_raw):
     return RawListing(
-        source_id="onlinejobs_ph", url="https://www.onlinejobs.ph/jobseekers/job/x",
-        title="Job", body="body", pay_raw=pay_raw,
+        source_id="onlinejobs_ph",
+        url="https://www.onlinejobs.ph/jobseekers/job/x",
+        title="Job",
+        body="body",
+        pay_raw=pay_raw,
     )
 
 
@@ -51,8 +54,11 @@ def test_onlinejobs_bare_small_number_is_usd_hourly():
 
 def test_remotive_knotation_salary():
     raw = RawListing(
-        source_id="remotive", url="https://remotive.com/x", title="Job",
-        body="body", pay_raw="$31,2k- $52k",
+        source_id="remotive",
+        url="https://remotive.com/x",
+        title="Job",
+        body="body",
+        pay_raw="$31,2k- $52k",
     )
     info = pay_utils.pay_from_listing(raw, fx=FX)
     assert info.kind == models.PAY_YEARLY
@@ -61,7 +67,9 @@ def test_remotive_knotation_salary():
 
 def test_body_scan_fallback():
     raw = RawListing(
-        source_id="remotive", url="https://remotive.com/x", title="Job",
+        source_id="remotive",
+        url="https://remotive.com/x",
+        title="Job",
         body="We pay $10 per hour depending on experience. Apply now.",
     )
     info = pay_utils.pay_from_listing(raw, fx=FX)
