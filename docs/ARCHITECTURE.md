@@ -115,3 +115,35 @@ Pages: Home (flows + top listings), Flow pages, Search, Gig detail, Submit gig, 
 - Listing rot → expiry detection is mandatory; feeds the freshness factor.
 - Scams → hard-signal auto-exclusion from day one.
 - Over-scoring early → ship with 2–3 factors, iterate against the fixture corpus.
+
+## 10. Adapter reliability plan (2026-09-18)
+
+Sources drift: domains move, HTML/API schemas change, bot protection escalates, keys/quotas
+shift. Keeping every adapter's links working is a pipeline property, not a per-adapter fix.
+Phased plan (each phase is its own task):
+
+1. **Centralize endpoints.** `GIGGREGATOR_<SOURCE>_URL` env overrides defaulting to each
+   adapter's current constant (pattern: `GIGGREGATOR_CAREERJET_USER_IP`). A domain move
+   becomes a config change, not a code hunt.
+2. **Resilient fetch.** Retry with short backoff + jitter on 429/5xx/timeout in
+   `base.fetch()` (2–3 attempts, honor `Retry-After`, respect `HTTP_PAGE_DELAY_SECONDS`).
+   `record_source_error` only after retries exhaust, so transient blips stop polluting
+   `error_count` and the ADR-0014 `source_reliability` score.
+3. **Probe/diagnose mode.** `giggregator.ingest --probe`: one lightweight GET + parse-count
+   per enabled source, classified as: `domain_moved` (DNS/NXDOMAIN), `redirect` (301 —
+   logged for human review, never auto-followed into prod), `bot_blocked` (403/429/CF),
+   `healthy (N listings)`, or `layout_drift` (200 OK but 0 parsed). Results written to
+   source health; CLI prints a table and exits non-zero when any source is degraded.
+4. **Alarm wiring.** `/health` gains `yield_status` (ok/degraded/zero) + `last_probe_*`;
+   run the probe daily next to the CareerJet top-up scheduled task (failure = signal).
+5. **Fixture refresh cadence.** On first drift alarm (or quarterly): explicit "refresh
+   <source> fixtures" task — re-fetch raw, re-run the golden snapshot; the diff is the
+   review artifact. Golden tests make parser updates safe.
+6. **Domain migration & link rot.** `dedupe_key` is company+title (not URL), so a source
+   domain move does not duplicate existing listings; stored listing URLs expire via
+   `expire_stale_gigs` (no per-listing checker). Guardrail: a domain-changing redirect must
+   be confirmed by a human before flipping the Phase-1 override (hijack/spam redirect must
+   not poison the index).
+
+Deliberately out of scope: auto-healing parsers (ML never blocks; adds fragility) and
+per-listing URL revalidation (expiry already owns rot).
