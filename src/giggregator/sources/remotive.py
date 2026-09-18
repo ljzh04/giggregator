@@ -42,6 +42,9 @@ class RemotiveAdapter(SourceAdapter):
             body = normalize.strip_html(job.get("description"))
             if tags:
                 body = f"{body}\nTags: {tags}"
+            # (e): the API's job_type is now structured, not body prose (ADR-0015).
+            # Body text is unchanged (the type prose stays as provenance for FTS and
+            # requirements); only the structured field is newly populated.
             listings.append(
                 models.RawListing(
                     source_id=self.meta.id,
@@ -52,6 +55,7 @@ class RemotiveAdapter(SourceAdapter):
                     posted_at_raw=job.get("publication_date"),
                     pay_raw=normalize.clean(job.get("salary")) or None,
                     location_raw=normalize.clean(job.get("candidate_required_location")),
+                    employment_type_raw=normalize.clean(job.get("job_type")),
                     fetched_at=now,
                 )
             )

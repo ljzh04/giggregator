@@ -79,6 +79,7 @@ class JooblePhAdapter(SourceAdapter):
             if not title or not job.get("link"):
                 continue  # log-and-skip: one bad listing never fails a batch
             pay = normalize.clean(job.get("salary"))
+            job_type = normalize.clean(job.get("type"))
             listings.append(
                 models.RawListing(
                     source_id=self.meta.id,
@@ -89,6 +90,7 @@ class JooblePhAdapter(SourceAdapter):
                     posted_at_raw=job.get("updated"),
                     pay_raw=pay or None,
                     location_raw=normalize.clean(job.get("location")) or LOCATION,
+                    employment_type_raw=job_type,
                     fetched_at=now,
                 )
             )

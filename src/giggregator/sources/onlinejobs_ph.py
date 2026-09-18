@@ -31,7 +31,6 @@ FETCH_URL = "https://www.onlinejobs.ph/jobseekers/jobsearch"
 BASE_URL = "https://www.onlinejobs.ph"
 
 _PAY_DD = re.compile(r"icon-round-dollar[\s\S]{0,220}?<dd[^>]*>([\s\S]{1,80}?)</dd>", re.I)
-_BADGE = re.compile(r"<span[^>]*class=\"badge[^\"]*\"[^>]*>([^<]{1,30})</span>")
 
 # Politeness bound: page 1 + up to 2 more (OnlineJobs shows ~30 cards per page).
 MAX_PAGES = 3
@@ -106,16 +105,19 @@ class OnlineJobsAdapter(SourceAdapter):
             title_tag = box.find("h4")
             if title_tag is None:
                 continue
+            # (f): strip the employment badge at the DOM level, not via string replace
+            # on the already-stripped text — the old replace() matched the serialized
+            # <span> HTML against plain text and was a silent no-op, leaving the badge
+            # ("... Full Time") duplicated in every title and dedupe key.
+            badge_tag = title_tag.select_one("span.badge")
+            listing_type = normalize.clean(badge_tag.get_text()) if badge_tag else ""
+            if badge_tag is not None:
+                badge_tag.decompose()
             title = normalize.clean(title_tag.get_text(" ", strip=True))
 
             body_parts: list[str] = []
-            listing_type = ""
-            badge_match = _BADGE.search(str(title_tag))
-            if badge_match:
-                listing_type = normalize.clean(badge_match.group(1))
-                title = normalize.clean(title.replace(badge_match.group(0), ""))
-                if listing_type:
-                    body_parts.append(f"[Type: {listing_type}]")
+            if listing_type:
+                body_parts.append(f"[Type: {listing_type}]")
             for tag_link in box.select(".job-tag a"):
                 body_parts.append(f"[Tag: {normalize.clean(tag_link.get_text())}]")
             desc = box.select_one("div.desc")

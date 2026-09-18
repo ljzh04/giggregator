@@ -55,6 +55,8 @@ class JobicyAdapter(SourceAdapter):
             title = normalize.clean(job.get("jobTitle"))
             if not title or not job.get("url"):
                 continue
+            # The API's jobType is structured (promoted to employment_type_raw per
+            # ADR-0015); it stays in the body too as provenance for FTS/rules.
             body = normalize.strip_html(job.get("jobDescription") or job.get("jobExcerpt"))
             job_types = ", ".join(job.get("jobType") or [])
             if job_types:
@@ -69,6 +71,7 @@ class JobicyAdapter(SourceAdapter):
                     posted_at_raw=job.get("pubDate"),
                     pay_raw=_salary_raw(job),
                     location_raw=normalize.clean(job.get("jobGeo")),
+                    employment_type_raw=job_types,
                     fetched_at=now,
                 )
             )

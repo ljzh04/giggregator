@@ -231,9 +231,30 @@ idempotent `ALTER TABLE gigs ADD COLUMN employment_type TEXT` on every `connect(
 SQLite's "duplicate column name" is tolerated; any other error propagates), and the column
 is threaded through `_gig_values`/INSERT/UPDATE/`_CARD_COLS`/`gig_from_row`. Surfaced in
 `render_listing`'s meta line and the gig-detail header.
-**Consequences**: employment type is now structured and displayed. Scope kept minimal —
-only `onlinejobs_ph` populates it (the badge); the JSON adapters keep their `[Type: ...]`
-body text and will be promoted to the field in a follow-up. **No scoring/flow change**
+**Consequences**: employment type is now structured and displayed. Populated by
+`onlinejobs_ph` (badge) plus `remotive`/`jobicy`/`arbeitnow`/`jooble_ph` (native type
+fields); `careerjet_ph` carries no type field in its API response, so it stays
+`unknown` as designed (iron rule 1: never guessed). **No scoring/flow change**
 (the ADR-0007 weights and flow definitions are untouched), which deliberately defers "use
-employment type to filter gig-style flows" to a later weights-entry. Body text is
-unchanged, so FTS behaviour is unchanged.
+employment type to filter gig-style flows" to a later weights-entry.
+
+## ADR-0016 — Employment-type follow-up: JSON-adapter promotion + OnlineJobs title fix
+**Status**: accepted (2026-09-18)
+**Context**: ADR-0015 deliberately scoped population to `onlinejobs_ph` alone, leaving
+the JSON adapters' native type fields writing `[Type: ...]` body prose only. Separately,
+the OnlineJobs badge strip used a string `replace()` against already-stripped text, so it
+was a silent no-op: every title carried its badge suffix (e.g. `"Ticket Puller Full Time"`),
+duplicated into dedupe keys and polluting FTS token matching.
+**Decision**: (e) `remotive`/`jobicy`/`arbeitnow`/`jooble_ph` populate
+`employment_type_raw` from their native fields (`job_type`, `jobType`, `job_types`,
+`type`); (f) the OnlineJobs badge is stripped at the DOM level (`badge_tag.decompose()`
+before reading the `<h4>` text) instead of by string replace. Mapping extended minimally:
+`temporary | temp | seasonal` → `contract` (Jooble's `"Temporary"` type; verified in the
+committed fixture). Body text is unchanged everywhere — the type prose stays as provenance
+for FTS/rules — and no scoring weights or flow definitions were touched.
+**Consequences**: fixture-corpus diff over 159 gigs (baseline vs after, same-`now`): 68
+gigs newly typed (`unknown` 131 → 63; `full_time` 16 → 62; `contract` 0 → 20;
+`part_time` 10 → 11; plus 1 `internship`), `min_hours` deltas 0, relevance deltas 0
+(no scoring change; distinct corpus untouched since body text is byte-identical). 30
+OnlineJobs titles lose their badge suffix (dedupe keys and FTS index rebuild off the
+cleaner titles on the next ingest).

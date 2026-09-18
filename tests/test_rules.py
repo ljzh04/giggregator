@@ -118,6 +118,7 @@ def test_employment_type_maps_badges_and_jobtypes():
     assert normalize.employment_type("full_time") == models.EMPLOYMENT_FULL_TIME  # remotive style
     assert normalize.employment_type("Contract") == models.EMPLOYMENT_CONTRACT
     assert normalize.employment_type("Freelance") == models.EMPLOYMENT_CONTRACT
+    assert normalize.employment_type("Temporary") == models.EMPLOYMENT_CONTRACT  # jooble style
     assert normalize.employment_type("Internship") == models.EMPLOYMENT_INTERNSHIP
 
 

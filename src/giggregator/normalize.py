@@ -468,7 +468,10 @@ def scam_flags(text: str, *, company: str = "") -> list[str]:
 _EMPLOYMENT_PATTERNS: list[tuple[str, str]] = [
     (models.EMPLOYMENT_GIG, r"\bgig\b|per[ _-]task|one[ _-]off|project[ _-]based|per[ _-]piece"),
     (models.EMPLOYMENT_INTERNSHIP, r"\bintern(?:ship)?\b"),
-    (models.EMPLOYMENT_CONTRACT, r"\bcontract\b|\bcontractor\b|freelanc"),
+    (
+        models.EMPLOYMENT_CONTRACT,
+        r"\bcontract\b|\bcontractor\b|freelanc|\btemporary\b|\btemp\b|seasonal",
+    ),
     (models.EMPLOYMENT_PART_TIME, r"part[ _-]?time"),
     (models.EMPLOYMENT_FULL_TIME, r"full[ _-]?time"),
 ]

@@ -43,6 +43,9 @@ class ArbeitnowAdapter(SourceAdapter):
             body = normalize.strip_html(job.get("description"))
             job_types = ", ".join(job.get("job_types") or [])
             if job_types:
+                # The API's job_types are structured (promoted to employment_type_raw
+                # per ADR-0015); they stay in the body too as provenance for
+                # FTS/rules (golden-tested below).
                 body = f"[Type: {job_types}]\n{body}"
             listings.append(
                 models.RawListing(
@@ -54,6 +57,7 @@ class ArbeitnowAdapter(SourceAdapter):
                     posted_at_raw=job.get("published_at") or job.get("created_at"),
                     pay_raw=normalize.clean(job.get("salary")) or None,
                     location_raw=normalize.clean(job.get("location")),
+                    employment_type_raw=job_types,
                     fetched_at=now,
                 )
             )

@@ -104,6 +104,39 @@ def test_onlinejobs_badge_surfaces_employment_type():
     assert any("[Type: " in listing.body for listing in listings)  # body text unchanged
 
 
+def test_onlinejobs_badge_stripped_from_title():
+    # (f): the badge must not duplicate itself into the title/dedupe key
+    listings = _parse("onlinejobs_ph")
+    assert listings and all(listing.employment_type_raw for listing in listings)
+    for listing in listings:
+        badge = listing.employment_type_raw
+        assert not listing.title.lower().endswith(badge.lower())
+    by_url = {listing.url: listing for listing in listings}
+    first = by_url["https://www.onlinejobs.ph/jobseekers/job/ticket-puller-1723956"]
+    assert first.title == "Ticket Puller"  # was 'Ticket Puller Full Time' before the fix
+
+
+def test_json_adapters_promote_type_to_employment_field():
+    # (e): jobType/job_types/job_type values are structured; body prose is unchanged
+    remotive = {item.url: item for item in _parse("remotive") if item.employment_type_raw}
+    assert remotive, "remotive fixture carries job_type values"
+    assert {item.employment_type_raw for item in remotive.values()} == {
+        "full_time",
+        "contract",
+        "part_time",
+        "freelance",
+    }
+    jobicy = {item.url: item for item in _parse("jobicy") if item.employment_type_raw}
+    assert {item.employment_type_raw for item in jobicy.values()} == {"Full-Time", "Contract"}
+    arbeitnow = {item.url: item for item in _parse("arbeitnow") if item.employment_type_raw}
+    assert "Experienced, freelance" in {item.employment_type_raw for item in arbeitnow.values()}
+    jooble = {item.url: item for item in _parse("jooble_ph") if item.employment_type_raw}
+    assert {item.employment_type_raw for item in jooble.values()} == {"Full-time", "Temporary"}
+    # body provenance kept: the [Type:] prose Jobicy/Arbeitnow wrote is still there
+    assert any("[Type: " in item.body for item in jobicy.values())
+    assert any("[Type: " in item.body for item in arbeitnow.values())
+
+
 def test_onlinejobs_next_page_url_from_fixture():
     # real page-1 capture: li.active is page 1 -> link for page 2 (offset 30)
     url = next_page_url(fixture_bytes("onlinejobs_ph/onlinejobs_ph_20260915_01.html"))
